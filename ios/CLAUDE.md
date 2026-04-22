@@ -1,0 +1,109 @@
+# CLAUDE.md — iOS stack
+
+This file gives Claude Code the project context it needs to work effectively on the **iOS** target. Claude Code reads this automatically at the start of every session in this folder.
+
+## Project
+
+A native iOS application written in **Swift** with **SwiftUI** as the UI framework. The codebase follows **MVVM + Clean Architecture** and uses **Swift Concurrency** (`async/await`, `Task`, `AsyncSequence`, actors) throughout. Dependencies are managed with **Swift Package Manager**; dependency injection uses a manual **composition root + initializer injection** pattern.
+
+This is the iOS counterpart to the Android stack one folder over. Conventions are aligned where it makes sense, and intentionally platform-idiomatic where it doesn't.
+
+## Tech stack
+
+- **Language:** Swift 6 (strict concurrency enabled); deployment target iOS 18+ unless a specific project requires older. iOS 18 gets us `@Entry` for Environment values, the improved `NavigationStack` ergonomics (typed path bindings without boilerplate), and the polished `.scrollPosition(id:)` behaviour.
+- **UI:** SwiftUI (+ UIKit interop via `UIViewRepresentable` / `UIHostingController` when needed)
+- **State:** `@Observable` (Swift Observation framework), `@State`, `@Binding`, `@Environment`
+- **Architecture:** MVVM + Clean Architecture (Presentation / Domain / Data layers)
+- **DI:** Composition root + constructor injection; protocols for testability
+- **Concurrency:** Swift Concurrency (`async/await`, `Task`, `AsyncSequence`, actors, `@MainActor`)
+- **Networking:** `URLSession` + `async/await` + `Codable` (add Alamofire only if genuinely needed)
+- **Persistence:** SwiftData for models that belong to the user; `UserDefaults` / `@AppStorage` for preferences; Keychain for secrets
+- **Navigation:** `NavigationStack` with typed destinations (value-based navigation)
+- **Images:** `AsyncImage` for simple cases; add Nuke/Kingfisher only for advanced needs
+- **Testing:** Swift Testing (`@Test`, `#expect`, `#require`) for unit/integration; XCTest for UI tests
+
+## Package / folder layout
+
+A typical feature looks like:
+
+```
+Feature_X/
+├── Data/
+│   ├── Remote/      # URLSession client + DTOs (Codable)
+│   ├── Local/       # SwiftData models + persistence
+│   ├── Mapper/      # DTO ↔ Domain model
+│   └── Repository/  # RepositoryImpl (conforms to Domain protocol)
+├── Domain/
+│   ├── Model/       # Plain Swift structs
+│   ├── Repository/  # Repository protocols
+│   └── UseCase/     # One type per action
+└── Presentation/
+    ├── <Feature>/   # View + ViewModel + ViewState + ViewEvent
+    └── Navigation/  # Route / Destination enums
+```
+
+Dependency direction is always **Presentation → Domain ← Data**. The Domain layer is a pure Swift module with no `SwiftUI`, `UIKit`, `Foundation.URLSession`, or `SwiftData` imports. `Foundation` is fine.
+
+## Conventions
+
+**Naming**
+- Types: `UpperCamelCase` (`UserProfileView`, `GetUserProfileUseCase`).
+- Functions, properties: `lowerCamelCase`.
+- Use cases: verb-based (`GetUserProfileUseCase`, `SubmitOrderUseCase`), exposing a `callAsFunction` or a single method (`execute` / `invoke`).
+- Protocols: plain nouns (`UserRepository`), not `…able` or `I…` — e.g. `UserRepository`, not `IUserRepository`.
+- Implementations suffixed `Impl` or with concrete purpose (`LiveUserRepository`, `MockUserRepository`).
+
+**State**
+- View models are `@Observable final class` types (Swift 5.9+ `Observation` framework), marked `@MainActor` when they update UI state.
+- ViewState is a value type — preferably an `enum` when states are distinct (`loading`, `loaded(Data)`, `error(Error)`), otherwise a `struct`.
+- One-off effects (navigation, alerts, toasts) travel through an `AsyncStream<ViewEvent>` or a dedicated callback, not through ViewState.
+
+**Views**
+- Separate **stateless** views (take state + callbacks) from **stateful** container views that own the ViewModel. The container is usually named `…RootView` or `…Route`.
+- Views get at least one `#Preview` with representative data; multi-state previews use `PreviewProvider`-style helpers or multiple `#Preview` macros.
+- Use `Environment` for things that are truly environmental (theme, locale, currentUser) — not as a general DI mechanism.
+
+**Concurrency**
+- `@MainActor` on anything that touches UI state; keep heavy work in async functions and `Task.detached` only with good reason.
+- Never use `DispatchQueue.main.async { }` in new code — use `await MainActor.run { … }` or mark the function/type `@MainActor`.
+- Cancellation is cooperative — use `Task.checkCancellation()` in long loops; honour `CancellationError`.
+- Prefer structured concurrency (`async let`, `TaskGroup`) over detached tasks.
+
+**Errors**
+- Domain layer returns `Result<T, DomainError>` or `throws` a `DomainError` — never `throws` a platform error (`URLError`, `NSError`) across layers.
+- Network/IO errors are mapped at the repository boundary.
+
+## Build
+
+- Swift Package Manager for dependencies (`Package.swift` or Xcode SPM integration). Pin versions; don't use `.branch(...)`.
+- `xcodebuild` from CI: `xcodebuild -scheme App -destination 'platform=iOS Simulator,name=iPhone 15' build`.
+- Tests: `xcodebuild test -scheme App -destination 'platform=iOS Simulator,name=iPhone 15'`.
+- Linting: SwiftLint and/or SwiftFormat if configured.
+
+## What Claude should do
+
+- **Prefer editing existing files** to creating new ones. Only create files when a new feature genuinely needs them.
+- **Respect layer boundaries.** No `SwiftUI`/`UIKit`/`SwiftData`/`URLSession` imports in `Domain/`.
+- **Write tests** for new use cases and view models. Prefer **Swift Testing** (`@Test`) for new test targets; extend existing XCTest targets rather than duplicating.
+- **Use `@Observable` for view models.** Do not use `ObservableObject` / `@Published` in new code unless the app targets < iOS 17.
+- **Honour Swift 6 strict concurrency.** If a type needs `Sendable`, add it explicitly. Don't suppress warnings with `@unchecked Sendable` without justification.
+- **Keep views small.** Extract a subview when a `body` exceeds ~40 lines or nests more than two levels.
+
+## Specialist agents
+
+Use the `Task` tool with these subagents for focused work (see `.claude/agents/`):
+
+- `ios-architect` — architectural decisions, module boundaries, trade-offs.
+- `ios-ui-engineer` — building SwiftUI screens and components.
+- `ios-reviewer` — code review focused on Swift/iOS idioms and concurrency.
+- `ios-tester` — writing unit, async, and UI tests.
+- `ios-build-expert` — Swift Package Manager, build settings, Xcode project quirks.
+
+## Useful slash commands
+
+See `.claude/commands/`:
+
+- `/new-feature` — scaffold a full feature (Data + Domain + Presentation).
+- `/add-view` — add a SwiftUI view + ViewModel + ViewState.
+- `/add-usecase` — add a use case with a test.
+- `/review-ios` — run a review pass with `ios-reviewer`.

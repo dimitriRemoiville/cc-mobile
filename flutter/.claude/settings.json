@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(flutter *)",
+      "Bash(dart *)",
+      "Bash(fvm *)",
+      "Bash(melos *)",
+      "Bash(pod *)",
+      "Bash(gradle *)",
+      "Bash(./gradlew *)",
+      "Bash(xcodebuild *)",
+      "Bash(xcrun *)",
+      "Bash(make *)",
+      "Bash(lefthook *)",
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git branch*)",
+      "Bash(git show*)",
+      "Bash(git add*)",
+      "Bash(git commit*)",
+      "Bash(git restore*)",
+      "Bash(git stash*)",
+      "Bash(ls*)",
+      "Bash(find*)",
+      "Bash(tree*)",
+      "Bash(wc*)",
+      "Bash(rm -rf build/*)",
+      "Bash(rm -rf .dart_tool/*)",
+      "Bash(rm -rf ios/Pods/*)",
+      "Bash(rm -rf ios/Podfile.lock)"
+    ],
+    "deny": [
+      "Bash(git push --force*)",
+      "Bash(git reset --hard*)",
+      "Bash(rm -rf /*)",
+      "Bash(flutter upgrade)",
+      "Bash(fvm install*)"
+    ]
+  }
+}

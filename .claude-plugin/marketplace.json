@@ -1,0 +1,74 @@
+{
+  "name": "cc-mobile",
+  "owner": {
+    "name": "Dimitri Remoiville",
+    "email": "dremoiville@palo-it.com"
+  },
+  "metadata": {
+    "description": "Claude Code setups for mobile stacks — Android, iOS, KMM, and Flutter. Each plugin ships opinionated skills, agents, and slash commands (including a from-zero /init-<stack>-app scaffolder).",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "cc-mobile-android",
+      "source": "./plugins/cc-mobile-android",
+      "description": "Android — Kotlin + Jetpack Compose, MVVM + Clean Architecture, Hilt, Retrofit + OkHttp + kotlinx.serialization, Room + DataStore, Navigation-Compose. Includes /init-android-app.",
+      "category": "mobile",
+      "tags": [
+        "android",
+        "kotlin",
+        "compose",
+        "clean-architecture",
+        "hilt",
+        "retrofit",
+        "room"
+      ]
+    },
+    {
+      "name": "cc-mobile-ios",
+      "source": "./plugins/cc-mobile-ios",
+      "description": "iOS — Swift + SwiftUI, MVVM + Clean Architecture, @Observable on @MainActor, URLSession + Codable, SwiftData + Keychain, NavigationStack typed routes. Includes /init-ios-app.",
+      "category": "mobile",
+      "tags": [
+        "ios",
+        "swift",
+        "swiftui",
+        "clean-architecture",
+        "observable",
+        "swiftdata",
+        "navigation-stack"
+      ]
+    },
+    {
+      "name": "cc-mobile-kmm",
+      "source": "./plugins/cc-mobile-kmm",
+      "description": "Kotlin Multiplatform Mobile — shared module with MVVM + Clean Architecture in commonMain, Ktor Client + kotlinx.serialization, Koin DI, shared ViewModels over StateFlow, SQLDelight, multiplatform-settings. Includes /init-kmm-app.",
+      "category": "mobile",
+      "tags": [
+        "kmm",
+        "kotlin-multiplatform",
+        "clean-architecture",
+        "ktor",
+        "koin",
+        "sqldelight",
+        "xcframework"
+      ]
+    },
+    {
+      "name": "cc-mobile-flutter",
+      "source": "./plugins/cc-mobile-flutter",
+      "description": "Flutter — Dart + Flutter, Clean Architecture, flutter_bloc + bloc_concurrency, freezed + fpdart (Either<Failure, T>), typed go_router, get_it, dio + OpenAPI client, drift + sqlcipher. Includes /init-flutter-app.",
+      "category": "mobile",
+      "tags": [
+        "flutter",
+        "dart",
+        "clean-architecture",
+        "bloc",
+        "freezed",
+        "fpdart",
+        "drift",
+        "go-router"
+      ]
+    }
+  ]
+}

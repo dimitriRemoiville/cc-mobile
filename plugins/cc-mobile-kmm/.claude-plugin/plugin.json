@@ -1,0 +1,21 @@
+{
+  "name": "cc-mobile-kmm",
+  "version": "0.1.0",
+  "description": "Opinionated Claude Code setup for Kotlin Multiplatform Mobile — shared module with MVVM + Clean Architecture in commonMain, Ktor Client + kotlinx.serialization, Koin DI, shared ViewModels over StateFlow, SQLDelight, multiplatform-settings. Ships skills, agents, and slash commands including /init-kmm-app to scaffold a new shared module end-to-end.",
+  "author": {
+    "name": "Dimitri Remoiville",
+    "email": "dremoiville@palo-it.com"
+  },
+  "license": "MIT",
+  "keywords": [
+    "kmm",
+    "kotlin-multiplatform",
+    "mobile",
+    "clean-architecture",
+    "ktor",
+    "koin",
+    "sqldelight",
+    "shared-viewmodels",
+    "xcframework"
+  ]
+}

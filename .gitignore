@@ -1,0 +1,25 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# IDEs
+.idea/
+.vscode/
+.zed/
+*.iml
+*.iws
+*.ipr
+
+# Claude Code local overrides
+.claude/settings.local.json
+
+# Per-agent runtime
+terminals/
+
+# OS / tooling scratch
+*.log
+*.swp
+*.swo
+*~

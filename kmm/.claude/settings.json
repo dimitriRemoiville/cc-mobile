@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(./gradlew *)",
+      "Bash(gradle *)",
+      "Bash(xcodebuild *)",
+      "Bash(xcrun *)",
+      "Bash(swift *)",
+      "Bash(swiftformat *)",
+      "Bash(swiftlint *)",
+      "Bash(ktlint *)",
+      "Bash(detekt *)",
+      "Bash(pod *)",
+      "Bash(adb *)",
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git branch*)",
+      "Bash(git show*)",
+      "Bash(git add*)",
+      "Bash(git commit*)",
+      "Bash(git restore*)",
+      "Bash(git stash*)",
+      "Bash(ls*)",
+      "Bash(find*)",
+      "Bash(tree*)",
+      "Bash(wc*)",
+      "Bash(rm -rf build/*)",
+      "Bash(rm -rf shared/build/*)",
+      "Bash(rm -rf androidApp/build/*)",
+      "Bash(rm -rf iosApp/build/*)",
+      "Bash(rm -rf .gradle/*)"
+    ],
+    "deny": [
+      "Bash(git push --force*)",
+      "Bash(git reset --hard*)",
+      "Bash(rm -rf /*)"
+    ]
+  },
+  "env": {
+    "GRADLE_OPTS": "-Dorg.gradle.jvmargs=-Xmx4g -Dkotlin.incremental=true"
+  }
+}

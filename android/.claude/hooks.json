@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'FILE=\"$CLAUDE_FILE_PATHS\"; case \"$FILE\" in *.kt|*.kts) if command -v ktlint >/dev/null 2>&1; then ktlint -F \"$FILE\" 2>/dev/null || true; elif [ -x ./gradlew ]; then ./gradlew -q ktlintFormat 2>/dev/null || echo \"ktlint: skipped (no ktlint binary, Gradle task unavailable)\"; else echo \"ktlint: skipped (not installed)\"; fi ;; esac'"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'CMD=\"$CLAUDE_TOOL_INPUT_command\"; case \"$CMD\" in *\"git commit\"*) if [ ! -x ./gradlew ]; then echo \"gradle wrapper missing; skipping pre-commit lint\"; elif ! grep -qE \"include[^A-Za-z]+[\\\"'\\'']:app[\\\"'\\'']\" settings.gradle settings.gradle.kts 2>/dev/null; then echo \"no :app module here (likely a KMM/multi-module repo); skipping android pre-commit\"; else ./gradlew -q :app:lintDebug :app:testDebugUnitTest || { echo \"lint/tests failed; commit blocked\"; exit 1; }; fi ;; esac'"
+          }
+        ]
+      }
+    ]
+  }
+}
