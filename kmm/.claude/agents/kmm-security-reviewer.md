@@ -2,6 +2,9 @@
 name: kmm-security-reviewer
 description: Use PROACTIVELY after any change touching the `:shared` module's network layer (Ktor), secrets handling, or serialization across a trust boundary. Reviews for leaky secrets in `multiplatform-settings`, weak TLS config, unvalidated deserialization, and unsafe `expect/actual` platform handoffs. Read-only; does not modify code.
 tools: Read, Grep, Glob, Bash
+skills:
+  - ktor-multiplatform
+  - multiplatform-settings
 model: opus
 ---
 

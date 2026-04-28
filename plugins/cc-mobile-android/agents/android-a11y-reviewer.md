@@ -2,6 +2,9 @@
 name: android-a11y-reviewer
 description: Use PROACTIVELY after any change to a Compose UI — new screen, refactored widget, tweaks to typography / interactions. Reviews against Android accessibility guidelines: content descriptions, semantics, tap target size, Dynamic Type / font scaling, RTL, focus & traversal, TalkBack expectations. Read-only; does not write code.
 tools: Read, Grep, Glob, Bash
+skills:
+  - android-accessibility
+  - compose-ui
 model: sonnet
 ---
 

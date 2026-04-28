@@ -2,6 +2,9 @@
 name: ios-performance-analyst
 description: Use PROACTIVELY when the user reports jank, slow cold start, memory pressure, or before shipping a release build. Proposes a measurement plan (Instruments, MetricKit, Signposts, SwiftUI `Self._printChanges()`) and reads code to identify likely hotspots. Read-only; does not write code.
 tools: Read, Grep, Glob, Bash
+skills:
+  - ios-performance
+  - swiftui-views
 model: opus
 ---
 

@@ -2,6 +2,10 @@
 name: ios-ui-engineer
 description: Use PROACTIVELY when building, modifying, or reviewing SwiftUI views. Triggers on any request to create a screen, view, component, navigation destination, or preview. Also use when refactoring an existing SwiftUI screen for state ownership, performance, or accessibility.
 tools: Read, Write, Edit, Grep, Glob, Bash
+skills:
+  - swiftui-views
+  - swift-style
+  - navigation-stack
 model: sonnet
 ---
 

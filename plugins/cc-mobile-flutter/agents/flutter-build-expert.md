@@ -2,6 +2,8 @@
 name: flutter-build-expert
 description: Use PROACTIVELY for any Flutter build, dependency, or toolchain issue. Owns `pubspec.yaml`, `build.yaml`, `analysis_options.yaml`, the `build_runner` toolchain (freezed, json_serializable, drift, go_router_builder), flavor setup (Android Gradle + Xcode schemes), CocoaPods, and build-performance tuning. Trigger on build failures, "add this library", version bumps, codegen issues, lint tweaks, or questions about flavor setup.
 tools: Read, Write, Edit, Grep, Glob, Bash
+skills:
+  - flutter-app-skeleton
 model: sonnet
 ---
 

@@ -324,6 +324,43 @@ check_agent_prefixes() {
   done
 }
 
+# Every `skills:` entry in an agent's frontmatter must map to a real skill
+# directory under the same stack's .claude/skills/. Catches typos and stale
+# references after a skill is renamed or removed.
+check_agent_skills_resolve() {
+  for stack in "${STACKS[@]}"; do
+    local agents_dir="$ROOT/$stack/.claude/agents"
+    local skills_dir="$ROOT/$stack/.claude/skills"
+    [[ ! -d "$agents_dir" || ! -d "$skills_dir" ]] && continue
+    local flagged=0
+    while IFS= read -r -d '' f; do
+      local fm in_skills=0
+      fm="$(extract_frontmatter "$f")"
+      while IFS= read -r line; do
+        if [[ "$line" =~ ^skills:[[:space:]]*$ ]]; then
+          in_skills=1
+          continue
+        fi
+        if [[ $in_skills -eq 1 ]]; then
+          if [[ "$line" =~ ^[[:space:]]+-[[:space:]]+(.+)[[:space:]]*$ ]]; then
+            local skill_name="${BASH_REMATCH[1]}"
+            skill_name="${skill_name%"${skill_name##*[![:space:]]}"}"  # rtrim
+            if [[ ! -d "$skills_dir/$skill_name" ]]; then
+              say_err "$stack/.claude/agents/$(basename "$f"): references missing skill: $skill_name"
+              flagged=$((flagged + 1))
+            fi
+          else
+            in_skills=0
+          fi
+        fi
+      done <<<"$fm"
+    done < <(find "$agents_dir" -maxdepth 1 -name '*.md' -print0)
+    if [[ $flagged -eq 0 ]]; then
+      say_ok "$stack: agent skills: references resolve to real skills"
+    fi
+  done
+}
+
 # ---------- main ----------
 
 bold "validate.sh — scanning .claude/ content across ${STACKS[*]}"; echo
@@ -364,6 +401,7 @@ check_settings_baseline
 check_plugin_parity
 check_skill_prefixes
 check_agent_prefixes
+check_agent_skills_resolve
 echo
 
 bold "summary"; echo

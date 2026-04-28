@@ -2,6 +2,12 @@
 name: kmm-engineer
 description: Use PROACTIVELY for writing shared Kotlin code in `commonMain` — repositories, use cases, mappers, ViewModels, Ktor API clients, Koin modules. Trigger on any request to add or modify business logic that should run on both Android and iOS. Not for native UI work (that's the sibling `android/` and `ios/` setups).
 tools: Read, Write, Edit, Grep, Glob, Bash
+skills:
+  - kmm-architecture
+  - shared-viewmodels
+  - koin-di
+  - ktor-multiplatform
+  - kmm-ios-interop
 model: sonnet
 ---
 

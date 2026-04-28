@@ -2,6 +2,9 @@
 name: android-performance-analyst
 description: Use PROACTIVELY when the user reports jank, slow startup, high memory, or before shipping a release build. Proposes a measurement plan (Macrobenchmark / Perfetto / Baseline Profile / Compose recomposition) and reads code to identify likely hotspots. Read-only; does not write code or change build config.
 tools: Read, Grep, Glob, Bash
+skills:
+  - android-performance
+  - compose-ui
 model: opus
 ---
 

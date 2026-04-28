@@ -2,6 +2,9 @@
 name: android-architect
 description: Use PROACTIVELY for architectural decisions in an Android/Kotlin/Compose project — module boundaries, layer responsibilities, whether a new feature belongs in data/domain/presentation, when to add a use case vs. call a repository directly, how to structure multi-module builds, and trade-offs between MVVM variants and MVI. Not for writing UI code or running tests.
 tools: Read, Grep, Glob, Bash
+skills:
+  - clean-architecture
+  - kotlin-style
 model: sonnet
 ---
 

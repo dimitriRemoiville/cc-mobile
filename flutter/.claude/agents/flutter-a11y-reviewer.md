@@ -2,6 +2,9 @@
 name: flutter-a11y-reviewer
 description: Use PROACTIVELY after any change to a Flutter widget — new screen, refactored widget, tweaks to typography/interactions. Reviews against Flutter accessibility guidelines: `Semantics`, labels, tap target size, `MediaQuery.textScaler`, RTL, focus traversal. Read-only; does not write code.
 tools: Read, Grep, Glob, Bash
+skills:
+  - flutter-accessibility
+  - widgets-and-screens
 model: sonnet
 ---
 

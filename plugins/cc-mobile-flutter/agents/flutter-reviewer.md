@@ -2,6 +2,11 @@
 name: flutter-reviewer
 description: Use PROACTIVELY after any substantive Dart/Flutter code change to review for idiom, layer violations, null safety, async correctness, bloc hygiene, widget recomposition, and DI leaks. Invoke before opening a PR or when the user asks for a review. Not for writing new features.
 tools: Read, Grep, Glob, Bash
+skills:
+  - dart-style
+  - clean-architecture-flutter
+  - widgets-and-screens
+  - bloc-state
 model: opus
 ---
 

@@ -2,6 +2,9 @@
 name: kmm-release-engineer
 description: Use PROACTIVELY for KMP release coordination — shared library versioning, XCFramework/pod publishing, Android app version bumps, iOS consumer integration updates, crash-mapping uploads, and cross-platform release notes. Write-capable; scoped to release-time files.
 tools: Read, Write, Edit, Grep, Glob, Bash
+skills:
+  - xcframework-distribution
+  - kmm-app-skeleton
 model: sonnet
 ---
 

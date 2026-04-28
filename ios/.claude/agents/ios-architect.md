@@ -2,6 +2,9 @@
 name: ios-architect
 description: Use PROACTIVELY for architectural decisions in a Swift/SwiftUI iOS project — module boundaries, layer responsibilities, whether a new feature belongs in Data/Domain/Presentation, when to introduce a use case vs. call a repository directly, how to structure multi-target / multi-package builds, and trade-offs between MVVM, MV, TCA, and Coordinator patterns. Not for writing views or running tests.
 tools: Read, Grep, Glob, Bash
+skills:
+  - clean-architecture-ios
+  - swift-style
 model: sonnet
 ---
 

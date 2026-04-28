@@ -2,6 +2,11 @@
 name: ios-reviewer
 description: Use PROACTIVELY after any substantive Swift or SwiftUI change to review for idioms, layer violations, concurrency correctness, Sendable safety, and SwiftUI pitfalls. Invoke before opening a PR or when the user asks for a review. Not for writing new features.
 tools: Read, Grep, Glob, Bash
+skills:
+  - swift-style
+  - swift-concurrency
+  - clean-architecture-ios
+  - swiftui-views
 model: opus
 ---
 

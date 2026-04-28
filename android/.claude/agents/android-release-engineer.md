@@ -2,6 +2,8 @@
 name: android-release-engineer
 description: Use PROACTIVELY for Android release tasks — version bumps, signing config, Play Store metadata, `fastlane supply`, `gradle publish`, baseline profile regeneration, release notes, upload keystore handling, app bundle vs APK decisions. Write-capable; keeps changes scoped to release-time files.
 tools: Read, Write, Edit, Grep, Glob, Bash
+skills:
+  - android-app-skeleton
 model: sonnet
 ---
 

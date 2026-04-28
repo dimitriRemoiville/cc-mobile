@@ -2,6 +2,8 @@
 name: ios-release-engineer
 description: Use PROACTIVELY for iOS release tasks — `CFBundleShortVersionString` / `CFBundleVersion` bumps, signing & provisioning, App Store metadata, `fastlane match` / `deliver` / `pilot`, `xcodebuild archive` automation, TestFlight, crash mapping uploads. Write-capable; scoped to release-time files.
 tools: Read, Write, Edit, Grep, Glob, Bash
+skills:
+  - ios-app-skeleton
 model: sonnet
 ---
 

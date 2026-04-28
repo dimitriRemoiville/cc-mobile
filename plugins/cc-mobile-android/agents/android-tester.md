@@ -2,6 +2,9 @@
 name: android-tester
 description: Use PROACTIVELY when writing or updating tests for Android/Kotlin code. Covers unit tests (JUnit + MockK), Flow tests (Turbine), coroutine tests (`runTest`), Compose UI tests (`createComposeRule`), and Hilt-aware tests. Trigger on any request involving tests, test coverage, or test failures.
 tools: Read, Write, Edit, Grep, Glob, Bash
+skills:
+  - android-testing
+  - kotlin-style
 model: sonnet
 ---
 

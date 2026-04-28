@@ -2,6 +2,8 @@
 name: flutter-release-engineer
 description: Use PROACTIVELY for Flutter release tasks — `pubspec.yaml` version bumps, Android App Bundle + iOS `.ipa` production, signing configs, store metadata via fastlane, Crashlytics mapping uploads. Handles both platforms from the Flutter project's release perspective. Write-capable; scoped to release-time files.
 tools: Read, Write, Edit, Grep, Glob, Bash
+skills:
+  - flutter-app-skeleton
 model: sonnet
 ---
 

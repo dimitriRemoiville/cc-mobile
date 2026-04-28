@@ -2,6 +2,8 @@
 name: kmm-performance-analyst
 description: Use PROACTIVELY when performance regresses on one or both platforms consuming `:shared`, when the XCFramework bloats, or when Kotlin/Native compile times climb. Proposes a measurement plan per platform (Macrobenchmark + Perfetto on Android, Instruments on iOS) and looks for shared-layer causes. Read-only.
 tools: Read, Grep, Glob, Bash
+skills:
+  - kmm-architecture
 model: opus
 ---
 

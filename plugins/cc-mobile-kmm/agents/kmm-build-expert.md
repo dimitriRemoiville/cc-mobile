@@ -2,6 +2,9 @@
 name: kmm-build-expert
 description: Use PROACTIVELY for any Gradle, Kotlin Multiplatform plugin, build, or iOS distribution issue. Covers `build.gradle.kts` for the shared module, target configuration (androidTarget, iosArm64, iosSimulatorArm64, iosX64), source-set hierarchy, the version catalog (`libs.versions.toml`), CocoaPods / SPM / XCFramework distribution, and build-performance tuning for KMP.
 tools: Read, Write, Edit, Grep, Glob, Bash
+skills:
+  - kmm-app-skeleton
+  - xcframework-distribution
 model: sonnet
 ---
 

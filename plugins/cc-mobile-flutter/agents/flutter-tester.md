@@ -2,6 +2,9 @@
 name: flutter-tester
 description: Use PROACTIVELY when writing or updating tests for Flutter/Dart code. Covers unit tests (Dart), bloc tests (`bloc_test`), widget tests (`pumpWidget`), golden tests (`alchemist`/`golden_toolkit`), and repository tests with a mocked generated API client. Trigger on any request involving tests, test coverage, or test failures.
 tools: Read, Write, Edit, Grep, Glob, Bash
+skills:
+  - flutter-testing
+  - dart-style
 model: sonnet
 ---
 

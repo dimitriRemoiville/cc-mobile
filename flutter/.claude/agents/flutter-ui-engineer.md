@@ -2,6 +2,10 @@
 name: flutter-ui-engineer
 description: Use PROACTIVELY when building, modifying, or reviewing Flutter screens and widgets. Triggers on any request to create a screen, widget, component, typed route, or preview. Also use when refactoring a widget tree for state ownership, recomposition performance, or accessibility.
 tools: Read, Write, Edit, Grep, Glob, Bash
+skills:
+  - widgets-and-screens
+  - dart-style
+  - bloc-state
 model: sonnet
 ---
 

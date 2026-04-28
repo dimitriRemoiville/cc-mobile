@@ -2,6 +2,8 @@
 name: ios-build-expert
 description: Use PROACTIVELY for any Swift Package Manager, Xcode project, or build-system issue. Covers `Package.swift`, Xcode project/scheme quirks, adding/updating dependencies, module resolution errors, linking issues, bitcode/module stability, and build-performance tuning. Trigger on build failures, "add this library", version bumps, or questions about target/module setup.
 tools: Read, Write, Edit, Grep, Glob, Bash
+skills:
+  - ios-app-skeleton
 model: sonnet
 ---
 

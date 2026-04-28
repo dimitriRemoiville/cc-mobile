@@ -25,16 +25,30 @@ This file is the template registry. The `/init-android-app` command reads this s
 | `INCLUDE_DATASTORE` | DataStore module + typed prefs |
 | `INCLUDE_FIREBASE` | google-services plugin + Crashlytics + Analytics init |
 
+## Layout
+
+Single Gradle module, `:app`. Clean Architecture layers live as packages under `app/src/main/java/{{PACKAGE_PATH}}/`:
+
+```
+ui/        → Compose + ViewModels (knows Android & Compose)
+  ↓
+domain/    → Pure-Kotlin business logic (no android.* imports, by convention)
+  ↑
+data/      → Repository impls, Retrofit, Room, DataStore (knows frameworks)
+```
+
+Why not start multi-module? The module tax (extra build.gradle.kts per module, explicit `project(":core:*")` wiring, slower first build) rarely pays off before you have real coupling pressure — a second app, a shared library, or a team boundary. Extracting `:core:domain` / `:core:data` later is mechanical once the pain is real. See `clean-architecture/SKILL.md` → "Module or package?".
+
 ## Execution order
 
 1. Create directory `{{APP_NAME}}/` with Gradle wrapper.
 2. Write `settings.gradle.kts`, root `build.gradle.kts`, `gradle.properties`, `gradle/libs.versions.toml`.
-3. Write module `build.gradle.kts` files (`app/`, `core/domain/`, `core/data/`).
+3. Write `app/build.gradle.kts` (single module — it carries all runtime deps).
 4. Write `AndroidManifest.xml`, `strings.xml`, themes, launcher icons.
-5. Write `:core:domain` (Outcome, DomainError, sample use case contract).
-6. Write `:core:data` (Retrofit/OkHttp factory, remote data source, Hilt module). Add Room / DataStore files behind flags.
-7. Write `:app` (Application, MainActivity, theme, splash screen + VM, nav graph).
-8. Write `:app` tests (splash VM test).
+5. Write `domain/` package (Outcome, DomainError, sample use case contract).
+6. Write `data/` package (Retrofit/OkHttp factory, Hilt module). Add `data/persistence/` + `data/datastore/` behind flags.
+7. Write UI (`{{APP_CLASS}}` Application, `MainActivity`, theme, splash screen + VM, nav graph).
+8. Write `:app` tests (splash VM test under `app/src/test/`).
 9. Compile + run unit tests.
 10. Emit manual setup notes (signing, flavor stubs, Firebase files).
 
@@ -64,8 +78,6 @@ dependencyResolutionManagement {
 rootProject.name = "{{APP_NAME}}"
 
 include(":app")
-include(":core:domain")
-include(":core:data")
 ```
 
 ### `build.gradle.kts` (root)
@@ -73,9 +85,7 @@ include(":core:data")
 ```kts
 plugins {
     alias(libs.plugins.android.application) apply false
-    alias(libs.plugins.android.library) apply false
     alias(libs.plugins.kotlin.android) apply false
-    alias(libs.plugins.kotlin.jvm) apply false
     alias(libs.plugins.kotlin.serialization) apply false
     alias(libs.plugins.ksp) apply false
     alias(libs.plugins.hilt) apply false
@@ -83,6 +93,8 @@ plugins {
     // INCLUDE_FIREBASE: alias(libs.plugins.firebase.crashlytics) apply false
 }
 ```
+
+`android.library` and `kotlin.jvm` plugin aliases are intentionally omitted — there are no library / pure-JVM modules yet. Add them to `libs.versions.toml` and this block when you extract `:core:*` modules.
 
 ### `gradle.properties`
 
@@ -267,9 +279,6 @@ android {
 }
 
 dependencies {
-    implementation(project(":core:domain"))
-    implementation(project(":core:data"))
-
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.runtime.ktx)
@@ -287,6 +296,21 @@ dependencies {
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
     implementation(libs.hilt.navigation.compose)
+
+    // Networking
+    implementation(libs.retrofit)
+    implementation(libs.retrofit.kotlinx.serialization)
+    implementation(libs.okhttp)
+    implementation(libs.okhttp.logging)
+    implementation(libs.kotlinx.coroutines.android)
+
+    // INCLUDE_ROOM
+    implementation(libs.room.runtime)
+    implementation(libs.room.ktx)
+    ksp(libs.room.compiler)
+
+    // INCLUDE_DATASTORE
+    implementation(libs.datastore.preferences)
 
     // INCLUDE_FIREBASE
     implementation(platform(libs.firebase.bom))
@@ -507,27 +531,14 @@ class SplashViewModelTest {
 
 ---
 
-## `:core:domain` module
+## `domain/` package
 
-### `core/domain/build.gradle.kts`
+Pure-Kotlin business logic. No `android.*` imports — keep this package framework-free by convention so it stays unit-testable without Robolectric, and so extracting it to a `:core:domain` module later is mechanical.
 
-```kts
-plugins {
-    alias(libs.plugins.kotlin.jvm)
-}
-
-dependencies {
-    implementation(libs.kotlinx.coroutines.core)
-
-    testImplementation(libs.junit)
-    testImplementation(libs.kotlinx.coroutines.test)
-}
-```
-
-### `core/domain/src/main/kotlin/{{PACKAGE_PATH}}/core/domain/Outcome.kt`
+### `app/src/main/java/{{PACKAGE_PATH}}/domain/Outcome.kt`
 
 ```kotlin
-package {{PACKAGE_ID}}.core.domain
+package {{PACKAGE_ID}}.domain
 
 sealed interface Outcome<out T> {
     data class Success<T>(val value: T) : Outcome<T>
@@ -540,10 +551,10 @@ inline fun <T, R> Outcome<T>.map(block: (T) -> R): Outcome<R> = when (this) {
 }
 ```
 
-### `core/domain/src/main/kotlin/{{PACKAGE_PATH}}/core/domain/DomainError.kt`
+### `app/src/main/java/{{PACKAGE_PATH}}/domain/DomainError.kt`
 
 ```kotlin
-package {{PACKAGE_ID}}.core.domain
+package {{PACKAGE_ID}}.domain
 
 sealed class DomainError(open val cause: Throwable? = null) {
     data class Network(override val cause: Throwable? = null) : DomainError(cause)
@@ -556,61 +567,14 @@ sealed class DomainError(open val cause: Throwable? = null) {
 
 ---
 
-## `:core:data` module
+## `data/` package
 
-### `core/data/build.gradle.kts`
+Repository implementations + framework adapters (Retrofit, Room, DataStore). Depends on `domain/`; `domain/` never depends on it. All Retrofit / Room / DataStore deps already live in `app/build.gradle.kts` above — no separate module build file.
 
-```kts
-plugins {
-    alias(libs.plugins.android.library)
-    alias(libs.plugins.kotlin.android)
-    alias(libs.plugins.kotlin.serialization)
-    alias(libs.plugins.ksp)
-    alias(libs.plugins.hilt)
-}
-
-android {
-    namespace = "{{PACKAGE_ID}}.core.data"
-    compileSdk = 35
-    defaultConfig { minSdk = 26 }
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
-    }
-    kotlinOptions { jvmTarget = "17" }
-}
-
-dependencies {
-    implementation(project(":core:domain"))
-
-    implementation(libs.kotlinx.coroutines.android)
-    implementation(libs.kotlinx.serialization.json)
-    implementation(libs.retrofit)
-    implementation(libs.retrofit.kotlinx.serialization)
-    implementation(libs.okhttp)
-    implementation(libs.okhttp.logging)
-
-    implementation(libs.hilt.android)
-    ksp(libs.hilt.compiler)
-
-    // INCLUDE_ROOM
-    implementation(libs.room.runtime)
-    implementation(libs.room.ktx)
-    ksp(libs.room.compiler)
-
-    // INCLUDE_DATASTORE
-    implementation(libs.datastore.preferences)
-
-    testImplementation(libs.junit)
-    testImplementation(libs.mockk)
-    testImplementation(libs.kotlinx.coroutines.test)
-}
-```
-
-### `core/data/src/main/kotlin/{{PACKAGE_PATH}}/core/data/network/ApiClientFactory.kt`
+### `app/src/main/java/{{PACKAGE_PATH}}/data/network/ApiClientFactory.kt`
 
 ```kotlin
-package {{PACKAGE_ID}}.core.data.network
+package {{PACKAGE_ID}}.data.network
 
 import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType
@@ -641,17 +605,17 @@ object ApiClientFactory {
 }
 ```
 
-### `core/data/src/main/kotlin/{{PACKAGE_PATH}}/core/data/di/DataModule.kt`
+### `app/src/main/java/{{PACKAGE_PATH}}/data/di/DataModule.kt`
 
 ```kotlin
-package {{PACKAGE_ID}}.core.data.di
+package {{PACKAGE_ID}}.data.di
 
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import retrofit2.Retrofit
-import {{PACKAGE_ID}}.core.data.network.ApiClientFactory
+import {{PACKAGE_ID}}.data.network.ApiClientFactory
 import javax.inject.Singleton
 
 @Module
@@ -666,12 +630,12 @@ object DataModule {
 
 ## INCLUDE_ROOM additions
 
-Only emit when `INCLUDE_ROOM` is true.
+Only emit when `INCLUDE_ROOM` is true. The Room dependencies are already in `app/build.gradle.kts` above (under the `// INCLUDE_ROOM` block).
 
-### `core/data/src/main/kotlin/{{PACKAGE_PATH}}/core/data/persistence/AppDatabase.kt`
+### `app/src/main/java/{{PACKAGE_PATH}}/data/persistence/AppDatabase.kt`
 
 ```kotlin
-package {{PACKAGE_ID}}.core.data.persistence
+package {{PACKAGE_ID}}.data.persistence
 
 import androidx.room.Database
 import androidx.room.RoomDatabase
@@ -686,10 +650,10 @@ abstract class AppDatabase : RoomDatabase() {
 }
 ```
 
-### `core/data/src/main/kotlin/{{PACKAGE_PATH}}/core/data/persistence/SampleEntity.kt`
+### `app/src/main/java/{{PACKAGE_PATH}}/data/persistence/SampleEntity.kt`
 
 ```kotlin
-package {{PACKAGE_ID}}.core.data.persistence
+package {{PACKAGE_ID}}.data.persistence
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
@@ -701,10 +665,10 @@ data class SampleEntity(
 )
 ```
 
-### `core/data/src/main/kotlin/{{PACKAGE_PATH}}/core/data/persistence/SampleDao.kt`
+### `app/src/main/java/{{PACKAGE_PATH}}/data/persistence/SampleDao.kt`
 
 ```kotlin
-package {{PACKAGE_ID}}.core.data.persistence
+package {{PACKAGE_ID}}.data.persistence
 
 import androidx.room.Dao
 import androidx.room.Insert
@@ -721,7 +685,7 @@ interface SampleDao {
 }
 ```
 
-Enable schema export in `core/data/build.gradle.kts`:
+Enable schema export in `app/build.gradle.kts` (inside the `android { }` block):
 
 ```kts
 ksp { arg("room.schemaLocation", "$projectDir/schemas") }
@@ -729,10 +693,10 @@ ksp { arg("room.schemaLocation", "$projectDir/schemas") }
 
 ## INCLUDE_DATASTORE additions
 
-### `core/data/src/main/kotlin/{{PACKAGE_PATH}}/core/data/datastore/AppPreferences.kt`
+### `app/src/main/java/{{PACKAGE_PATH}}/data/datastore/AppPreferences.kt`
 
 ```kotlin
-package {{PACKAGE_ID}}.core.data.datastore
+package {{PACKAGE_ID}}.data.datastore
 
 import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
@@ -776,8 +740,8 @@ Per-flavor file layout reminder: drop `google-services.json` into `app/src/dev/`
 
 - **No `kapt`.** KSP only (Hilt 2.48+, Room 2.6+ all support KSP).
 - **No string routes.** Navigation Compose 2.8+ typed destinations via `@Serializable` + `kotlinx-serialization` plugin.
-- **No `android.` imports in `:core:domain`.** It's a pure-JVM module for a reason — unit-testable without Robolectric.
-- **No direct Retrofit/Room imports in `:app`.** Cross the boundary only via interfaces from `:core:domain`.
+- **Keep the `domain/` package Android-free.** No `android.*` imports, no Compose, no Retrofit, no Room — only Kotlin stdlib + coroutines. Enforced by review until/unless you extract `:core:domain` (a `kotlin.jvm` module would enforce it mechanically).
+- **`ui/` consumes `domain/` interfaces, never `data/` types.** Repository implementations stay behind interfaces declared in `domain/`. Cross the boundary through use cases, not by reaching into `data/` directly.
 - **Compose BOM is the single source of truth** for Compose versions. Never pin individual Compose libs.
 - **Version catalog is the single source of truth** for all versions. Never inline `"2.1.0"` in a module `build.gradle.kts`.
 - **Hilt on the Application**, on every `Activity` / `ViewModel` / Service that needs injection. Don't sprinkle `EntryPoint` unless you truly have a non-Hilt consumer.

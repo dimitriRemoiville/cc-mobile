@@ -2,6 +2,9 @@
 name: flutter-security-reviewer
 description: Use PROACTIVELY after any change touching auth, secure storage, Dio networking, deep links, WebViews, Firebase App Check, or platform channels. Reviews Flutter code for plaintext secrets, TLS bypass, unvalidated deep links, WebView misconfig, and unsafe platform-channel handoffs. Read-only; does not modify code.
 tools: Read, Grep, Glob, Bash
+skills:
+  - flutter-security
+  - dio-networking
 model: opus
 ---
 

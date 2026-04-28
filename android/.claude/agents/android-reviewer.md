@@ -2,6 +2,10 @@
 name: android-reviewer
 description: Use PROACTIVELY after any substantive Kotlin or Android code change to review for idioms, layer violations, null-safety, coroutine correctness, and Compose pitfalls. Invoke before opening a PR or when the user asks for a review. Not for writing new features.
 tools: Read, Grep, Glob, Bash
+skills:
+  - kotlin-style
+  - clean-architecture
+  - compose-ui
 model: opus
 ---
 

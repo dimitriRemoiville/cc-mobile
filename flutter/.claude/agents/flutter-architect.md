@@ -2,6 +2,9 @@
 name: flutter-architect
 description: Use PROACTIVELY for architectural decisions in a Flutter app — where code belongs, how to model state, when to add a use case, when to split a feature, how a new domain concept should surface. Not for writing UI code or running tests.
 tools: Read, Grep, Glob, Bash
+skills:
+  - clean-architecture-flutter
+  - dart-style
 model: sonnet
 ---
 

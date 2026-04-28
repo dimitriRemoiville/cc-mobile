@@ -2,6 +2,9 @@
 name: ios-a11y-reviewer
 description: Use PROACTIVELY after any change to a SwiftUI view — new screen, refactored component, typography / interaction tweaks. Reviews against iOS accessibility guidelines: accessibility labels/hints/traits, Dynamic Type, VoiceOver navigation, Reduce Motion, contrast, RTL mirroring. Read-only; does not write code.
 tools: Read, Grep, Glob, Bash
+skills:
+  - ios-accessibility
+  - swiftui-views
 model: sonnet
 ---
 

@@ -2,6 +2,9 @@
 name: ios-tester
 description: Use PROACTIVELY when writing or updating tests for Swift/iOS code. Covers unit tests (Swift Testing `@Test` / `#expect`), async tests (`async` test functions, `Task`-based), SwiftUI view-model tests, snapshot / preview testing patterns, and XCTest-based UI automation. Trigger on any request involving tests, test coverage, or test failures.
 tools: Read, Write, Edit, Grep, Glob, Bash
+skills:
+  - ios-testing
+  - swift-style
 model: sonnet
 ---
 

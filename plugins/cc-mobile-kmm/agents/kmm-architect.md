@@ -2,6 +2,9 @@
 name: kmm-architect
 description: Use PROACTIVELY for architectural decisions in a Kotlin Multiplatform Mobile project — which source set a piece of code belongs in, when to use `expect`/`actual` vs. interface-injection, how to shape a feature so it's Swift-friendly, module / target configuration, and when to share ViewModels vs. keep them native. Not for writing implementations or tests.
 tools: Read, Grep, Glob, Bash
+skills:
+  - kmm-architecture
+  - kmm-ios-interop
 model: sonnet
 ---
 

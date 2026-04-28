@@ -2,6 +2,8 @@
 name: kmm-tester
 description: Use PROACTIVELY when writing or updating tests for shared Kotlin Multiplatform code. Covers unit tests with `kotlin.test`, coroutine tests with `kotlinx-coroutines-test`, testing suspend functions and `StateFlow`, and Ktor-based repository tests via `MockEngine`. Trigger on any request involving tests, test coverage, or test failures in `shared/`.
 tools: Read, Write, Edit, Grep, Glob, Bash
+skills:
+  - kmm-testing
 model: sonnet
 ---
 

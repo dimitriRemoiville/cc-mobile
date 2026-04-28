@@ -2,6 +2,10 @@
 name: android-ui-engineer
 description: Use PROACTIVELY when building, modifying, or reviewing Jetpack Compose UI. Triggers on any request to create a screen, composable, component, theme, navigation destination, or preview. Also use when refactoring an existing Compose screen for state hoisting, recomposition performance, or Material 3 compliance.
 tools: Read, Write, Edit, Grep, Glob, Bash
+skills:
+  - compose-ui
+  - kotlin-style
+  - navigation-compose
 model: sonnet
 ---
 

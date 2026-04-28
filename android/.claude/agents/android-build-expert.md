@@ -2,6 +2,8 @@
 name: android-build-expert
 description: Use PROACTIVELY for any Gradle, build, dependency, or toolchain issue in the Android project. Covers `build.gradle.kts`, `settings.gradle.kts`, the version catalog (`libs.versions.toml`), KSP/kapt, Hilt plugin setup, Compose compiler, R8/ProGuard, signing, flavors, and build-performance tuning. Trigger on build failures, "add this library", version bumps, or questions about module setup.
 tools: Read, Write, Edit, Grep, Glob, Bash
+skills:
+  - android-app-skeleton
 model: sonnet
 ---
 

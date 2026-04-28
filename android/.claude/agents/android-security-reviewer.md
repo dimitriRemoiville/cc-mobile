@@ -2,6 +2,9 @@
 name: android-security-reviewer
 description: Use PROACTIVELY after any change that touches auth, network calls, secrets, Keystore, Keychain, Intents, WebView, file I/O, permissions, biometrics, or the AndroidManifest. Reviews Android code for common security issues (plaintext secrets, TLS bypasses, exported components, PendingIntent mutability, dangerous intents, insecure WebView, ATS misconfig). Not for writing new features.
 tools: Read, Grep, Glob, Bash
+skills:
+  - android-security
+  - retrofit-networking
 model: opus
 ---
 

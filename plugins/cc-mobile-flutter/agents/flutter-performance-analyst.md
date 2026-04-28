@@ -2,6 +2,9 @@
 name: flutter-performance-analyst
 description: Use PROACTIVELY when the user reports jank, scroll stutter, slow startup, memory growth, or before shipping a release build. Proposes a measurement plan (DevTools Performance, CPU Profiler, Memory, rebuild tracker) and reads widget code to identify likely hotspots. Read-only.
 tools: Read, Grep, Glob, Bash
+skills:
+  - flutter-performance
+  - widgets-and-screens
 model: opus
 ---
 
