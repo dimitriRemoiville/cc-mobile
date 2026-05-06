@@ -1,11 +1,13 @@
 ---
 name: android-app-skeleton
-description: Authoritative blueprint for scaffolding a brand-new Android app with this project's conventions. Used by /init-android-app. Contains every file template, placeholder list, feature-flag block, and the procedure to emit a runnable splash.
+description: Authoritative blueprint for scaffolding a brand-new Android app with this project's conventions. Used by /init-android-app. Contains every file template, placeholder list, feature-flag block, and the procedure to emit a runnable Home screen with bottom-nav tabs (Feed + Profile) and a clean-architecture analytics layer.
 ---
 
 # Android app skeleton
 
-This file is the template registry. The `/init-android-app` command reads this skill top-to-bottom and substitutes placeholders before writing files. Do not improvise: the whole point of the skeleton is reproducibility.
+This file is the template registry. The `/init-android-app` command reads this skill top-to-bottom and substitutes placeholders before writing files. Follow templates verbatim — the whole point of the skeleton is reproducibility. The only acceptable divergence is a documented AGP-version delta (see "AGP 9 vs AGP 8.x" callout below). If you find yourself improvising more than that, stop and surface what you're seeing instead.
+
+**Target floor: AGP 9 / Kotlin 2.2 / JDK 17.** Older toolchains (AGP 8.x) require the deltas listed in the callout. Don't silently retarget — fail loudly if the resolved versions disagree with the floor table.
 
 ## Placeholders
 
@@ -44,11 +46,11 @@ Why not start multi-module? The module tax (extra build.gradle.kts per module, e
 1. Create directory `{{APP_NAME}}/` with Gradle wrapper.
 2. Write `settings.gradle.kts`, root `build.gradle.kts`, `gradle.properties`, `gradle/libs.versions.toml`.
 3. Write `app/build.gradle.kts` (single module — it carries all runtime deps).
-4. Write `AndroidManifest.xml`, `strings.xml`, themes, launcher icons.
-5. Write `domain/` package (Outcome, DomainError, sample use case contract).
-6. Write `data/` package (Retrofit/OkHttp factory, Hilt module). Add `data/persistence/` + `data/datastore/` behind flags.
-7. Write UI (`{{APP_CLASS}}` Application, `MainActivity`, theme, splash screen + VM, nav graph).
-8. Write `:app` tests (splash VM test under `app/src/test/`).
+4. Write `AndroidManifest.xml`, `strings.xml` (with tab labels), themes, launcher icons.
+5. Write `domain/` package — `Outcome`, `DomainError`, sample use case contract, **`analytics/AnalyticsTracker` interface + `AnalyticsEvent` sealed taxonomy** (always emitted; the analytics interface is part of the domain so use cases / VMs depend on the abstraction even when Firebase is absent).
+6. Write `data/` package — Retrofit/OkHttp factory + sample API + `RemoteDataSource`, Hilt `@Module` for networking, **`analytics/` module wiring `AnalyticsTracker` to `NoopAnalyticsTracker` (always) or `FirebaseAnalyticsTracker` (`INCLUDE_FIREBASE`)**. Add `data/persistence/` + `data/datastore/` behind their flags.
+7. Write UI — `{{APP_CLASS}}` Application, `MainActivity`, theme, **`HomeScreen` with bottom NavigationBar + nested NavHost (Feed + Profile tabs)**, each tab gets its own `*Screen.kt` + `*ViewModel.kt` + state, top-level nav graph with `Home` as start destination.
+8. Write `:app` tests — `domain/OutcomeMapTest.kt` and a `ui/home/feed/FeedViewModelTest.kt` that mocks `AnalyticsTracker` (demonstrates wiring + DI testability in one beat).
 9. Compile + run unit tests.
 10. Emit manual setup notes (signing, flavor stubs, Firebase files).
 
@@ -85,7 +87,6 @@ include(":app")
 ```kts
 plugins {
     alias(libs.plugins.android.application) apply false
-    alias(libs.plugins.kotlin.android) apply false
     alias(libs.plugins.kotlin.serialization) apply false
     alias(libs.plugins.ksp) apply false
     alias(libs.plugins.hilt) apply false
@@ -94,7 +95,9 @@ plugins {
 }
 ```
 
-`android.library` and `kotlin.jvm` plugin aliases are intentionally omitted — there are no library / pure-JVM modules yet. Add them to `libs.versions.toml` and this block when you extract `:core:*` modules.
+`org.jetbrains.kotlin.android` is **not** declared at the root: AGP 9 ships a built-in Kotlin runtime and registers the `kotlin` extension itself; applying the standalone plugin throws `Cannot add extension with name 'kotlin', as there is an extension already registered`. `android.library` / `kotlin.jvm` are intentionally omitted — there are no library / pure-JVM modules yet. Add aliases when you extract `:core:*` modules.
+
+> **AGP 8.x note.** If you've pinned to AGP 8.x for some reason, you must add `alias(libs.plugins.kotlin.android) apply false` here and the matching `alias(libs.plugins.kotlin.android)` in `app/build.gradle.kts`. The rest of the templates assume AGP 9.
 
 ### `gradle.properties`
 
@@ -106,7 +109,21 @@ org.gradle.configuration-cache=true
 kotlin.code.style=official
 android.useAndroidX=true
 android.nonTransitiveRClass=true
+# Required by AGP 9: KSP (and other plugins) register generated source dirs
+# via kotlin.sourceSets, which AGP 9's built-in Kotlin disallows by default.
+# Without this flag, every Hilt/Room scaffold dies at config time.
+android.disallowKotlinSourceSets=false
 ```
+
+### `gradle/gradle-daemon-jvm.properties`
+
+Pins the Gradle daemon JVM via the toolchain mechanism (foojay resolver). Preferred over relying on the user's `JAVA_HOME` — every contributor lands on the same JDK.
+
+```properties
+toolchainVersion=21
+```
+
+(JDK 21 runs the Gradle daemon; the project still targets bytecode 17 — see `compileOptions` and `kotlin { compilerOptions { jvmTarget } }` in `app/build.gradle.kts`.)
 
 ### `gradle/libs.versions.toml`
 
@@ -127,13 +144,14 @@ navigation-compose = "<latest-stable>"
 lifecycle = "<latest-stable>"
 activity-compose = "<latest-stable>"
 androidx-core-ktx = "<latest-stable>"
-retrofit = "<latest-stable>"
-retrofit-kotlinx-serialization = "<latest-stable>"
+retrofit = "<latest-stable>"               # >= 2.10 — bundles Square's kotlinx-serialization converter
 okhttp = "<latest-stable>"
 kotlinx-serialization = "<latest-stable>"
 datastore = "<latest-stable>"
 room = "<latest-stable>"
 firebase-bom = "<latest-stable>"
+google-services = "<latest-stable>"
+firebase-crashlytics-plugin = "<latest-stable>"
 junit = "<latest-stable>"
 mockk = "<latest-stable>"
 turbine = "<latest-stable>"
@@ -148,6 +166,8 @@ androidx-lifecycle-viewmodel-compose = { module = "androidx.lifecycle:lifecycle-
 compose-bom = { module = "androidx.compose:compose-bom", version.ref = "compose-bom" }
 compose-ui = { module = "androidx.compose.ui:ui" }
 compose-material3 = { module = "androidx.compose.material3:material3" }
+# Bottom-nav icons (Home, Person, etc.) come from the core icon set; pinned by the BOM.
+compose-material-icons-core = { module = "androidx.compose.material:material-icons-core" }
 compose-tooling = { module = "androidx.compose.ui:ui-tooling" }
 compose-tooling-preview = { module = "androidx.compose.ui:ui-tooling-preview" }
 
@@ -158,7 +178,11 @@ hilt-compiler = { module = "com.google.dagger:hilt-compiler", version.ref = "hil
 hilt-navigation-compose = { module = "androidx.hilt:hilt-navigation-compose", version.ref = "hilt-navigation-compose" }
 
 retrofit = { module = "com.squareup.retrofit2:retrofit", version.ref = "retrofit" }
-retrofit-kotlinx-serialization = { module = "com.jakewharton.retrofit:retrofit2-kotlinx-serialization-converter", version.ref = "retrofit-kotlinx-serialization" }
+# Square's official kotlinx-serialization converter — shipped inside Retrofit 2.10+.
+# Pin to the same `retrofit` ref. Do NOT use the older
+# `com.jakewharton.retrofit:retrofit2-kotlinx-serialization-converter` artifact: it
+# does not export the `asConverterFactory` symbol the templates rely on.
+retrofit-kotlinx-serialization = { module = "com.squareup.retrofit2:converter-kotlinx-serialization", version.ref = "retrofit" }
 okhttp = { module = "com.squareup.okhttp3:okhttp", version.ref = "okhttp" }
 okhttp-logging = { module = "com.squareup.okhttp3:logging-interceptor", version.ref = "okhttp" }
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinx-serialization" }
@@ -173,10 +197,12 @@ room-compiler = { module = "androidx.room:room-compiler", version.ref = "room" }
 # INCLUDE_DATASTORE
 datastore-preferences = { module = "androidx.datastore:datastore-preferences", version.ref = "datastore" }
 
-# INCLUDE_FIREBASE
+# INCLUDE_FIREBASE — the *-ktx variants have been empty stubs since Firebase BOM 32.5.
+# The KTX accessors moved into the main artifacts; use `com.google.firebase.Firebase`
+# (no `.ktx` package) at call sites.
 firebase-bom = { module = "com.google.firebase:firebase-bom", version.ref = "firebase-bom" }
-firebase-crashlytics = { module = "com.google.firebase:firebase-crashlytics-ktx" }
-firebase-analytics = { module = "com.google.firebase:firebase-analytics-ktx" }
+firebase-crashlytics = { module = "com.google.firebase:firebase-crashlytics" }
+firebase-analytics = { module = "com.google.firebase:firebase-analytics" }
 
 junit = { module = "junit:junit", version.ref = "junit" }
 mockk = { module = "io.mockk:mockk", version.ref = "mockk" }
@@ -186,30 +212,37 @@ kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-t
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
 android-library = { id = "com.android.library", version.ref = "agp" }
-kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+# `kotlin-android` is intentionally absent: AGP 9 has built-in Kotlin and registering
+# the standalone plugin throws "Cannot add extension with name 'kotlin'". Re-add it
+# (and the matching `alias(libs.plugins.kotlin.android)` in `app/build.gradle.kts`)
+# only if you've intentionally pinned AGP 8.x.
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
 hilt = { id = "com.google.dagger.hilt.android", version.ref = "hilt" }
-# INCLUDE_FIREBASE
-google-services = { id = "com.google.gms.google-services", version = "<latest-stable>" }
-firebase-crashlytics = { id = "com.google.firebase.crashlytics", version = "<latest-stable>" }
+# INCLUDE_FIREBASE — version refs (not inline strings) so /upgrade-deps can surface
+# them and the catalog stays consistent.
+google-services = { id = "com.google.gms.google-services", version.ref = "google-services" }
+firebase-crashlytics = { id = "com.google.firebase.crashlytics", version.ref = "firebase-crashlytics-plugin" }
 ```
 
-**Floor constraints (enforce before writing the file):**
+**Resolution rule: latest stable, every time.** Resolve each `[versions]` ref to the newest stable (no `-alpha`, `-beta`, `-RC`, `-dev`, `-SNAPSHOT`) by reading the registry's `maven-metadata.xml` at scaffold time. The command `/init-android-app` walks the catalog and fetches each one — see its **Phase 1.5** for the concrete URL list. Do not hard-code a number in this skill: hard-coded numbers age, and the user explicitly wants this command to work over time without churn.
 
-| Ref | Floor | Reason |
+**Compatibility traps (no fixed versions — describes the symptom + fix).** If the latest-stable resolution lands you in a known trap, the build fails in a recognizable way. Recognize it from the error and bump to whatever the relevant project's release notes call out as compatible.
+
+| Trap | Symptom | Resolution |
 |---|---|---|
-| `agp` | `>= 8.5.0` | K2 Kotlin plugin + Compose Compiler Gradle plugin both need AGP 8.5+. |
-| `kotlin` | `>= 2.0.0` | K2 compiler + the `org.jetbrains.kotlin.plugin.compose` plugin; the rest of the skill assumes K2 diagnostics. |
-| `ksp` | matches `kotlin` patch version (e.g. `2.0.21-1.0.28`) | KSP versioning is `<kotlinVersion>-<kspPatch>`; misalignment is the #1 cause of broken annotation processing. |
-| `hilt` | `>= 2.51` | First version with official KSP support — the skill uses `ksp(libs.hilt.compiler)`, not kapt. |
-| `compose-bom` | `>= 2024.09.00` | Material 3 APIs the scaffold uses assume late-2024 BOM. |
-| `room` | `>= 2.6.0` | KSP support; the skill uses `ksp(libs.room.compiler)`. |
-| `coroutines` | `>= 1.8.0` | `Dispatchers.setMain` in tests + structured cancellation guarantees the skill relies on. |
-| `activity-compose` | `>= 1.9.0` | Predictive-back integration. |
+| **Hilt vs current AGP** | `Cannot add extension with name 'kotlin'` / `Android BaseExtension not found` / `Could not find AGP base extension` at config time. | Hilt usually trails AGP majors by a few weeks. Use the latest Hilt; if it still fails, check the [Hilt release notes](https://github.com/google/dagger/releases) for the matching AGP support row and pin to that. |
+| **KSP vs Kotlin alignment** | `error: KSP cannot be loaded` / weird annotation-processing failures. | KSP versioning is `<kotlinVersion>-<kspPatch>`. The Kotlin and KSP majors must agree (e.g. Kotlin 2.2.x ⇄ KSP 2.2.x-N.N.N). Resolve KSP only after Kotlin so you can build the right query. |
+| **Compose BOM vs Material 3 surface** | `Unresolved reference: dynamicLightColorScheme` or similar Material 3 symbols. | The scaffold uses Material 3 APIs that arrived through 2024–2025 BOMs. Use the latest stable Compose BOM; old ones are missing surface. |
+| **Retrofit converter coordinate** | `Unresolved reference: asConverterFactory`. | Retrofit 2.10+ ships Square's official `com.squareup.retrofit2:converter-kotlinx-serialization`, which is what the templates use. Older Retrofit forces the deprecated Jake Wharton converter, which doesn't export the same symbol. Use the latest Retrofit. |
+| **Coroutines test API** | Test fails with `Module with the Main dispatcher had failed to initialize` / `Dispatchers.setMain` unresolved. | Need `kotlinx-coroutines-test` whose major matches `kotlinx-coroutines-core`. Resolve them off the same `coroutines` ref so they always agree. |
+| **AGP 9 + KSP source dirs** | At config time: `Configuring Kotlin source sets is no longer supported. Please use the Android-specific source sets instead.` | Add `android.disallowKotlinSourceSets=false` to `gradle.properties` (already in the template). |
+| **Compose Compiler vs Kotlin** | Compose Compiler Gradle plugin error mentioning a Kotlin-version mismatch. | Compose Compiler is bundled into Kotlin 2.0+; the templates rely on that. If you see a mismatch, you've pinned Compose Compiler separately — don't, let Kotlin own it. |
 
-If any resolved version falls below its floor, stop and report. Don't silently downgrade the template.
+If the resolved versions don't match this skill's idioms (e.g. the resolution lands AGP < 9 because the user pinned it), stop and surface the mismatch instead of silently downgrading.
+
+> **Escape hatch: AGP 8.x.** The templates target AGP 9. To use AGP 8.x intentionally: (1) re-add `alias(libs.plugins.kotlin.android) apply false` at the root and `alias(libs.plugins.kotlin.android)` in `app/build.gradle.kts` (AGP 8 has no built-in Kotlin); (2) the `kotlin { compilerOptions { jvmTarget } }` block also works on AGP 8 with Kotlin 2.0+, so nothing to change there; (3) `android.disallowKotlinSourceSets=false` is unnecessary on AGP 8 (harmless to keep).
 
 ---
 
@@ -218,9 +251,12 @@ If any resolved version falls below its floor, stop and report. Don't silently d
 ### `app/build.gradle.kts`
 
 ```kts
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
+    // No `kotlin.android` alias — AGP 9 has built-in Kotlin (see root build.gradle.kts).
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
     alias(libs.plugins.hilt)
@@ -228,14 +264,22 @@ plugins {
     // INCLUDE_FIREBASE: alias(libs.plugins.firebase.crashlytics)
 }
 
+// Optional release signing — only wires up if `keystore.properties` exists.
+// Commit `keystore.properties.example` (see post-scaffold notes); never commit the real one.
+val keystoreProps = Properties().apply {
+    val f = rootProject.file("keystore.properties")
+    if (f.exists()) f.inputStream().use(::load)
+}
+
 android {
     namespace = "{{PACKAGE_ID}}"
-    compileSdk = 35
+    // Resolve at scaffold time to the latest stable platform SDK.
+    compileSdk = {{COMPILE_SDK}}
 
     defaultConfig {
         applicationId = "{{PACKAGE_ID}}"
-        minSdk = 26
-        targetSdk = 35
+        minSdk = {{MIN_SDK}}
+        targetSdk = {{TARGET_SDK}}
         versionCode = 1
         versionName = "0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -254,6 +298,17 @@ android {
         }
     }
 
+    signingConfigs {
+        if (keystoreProps.isNotEmpty()) {
+            create("release") {
+                storeFile = rootProject.file(keystoreProps.getProperty("storeFile"))
+                storePassword = keystoreProps.getProperty("storePassword")
+                keyAlias = keystoreProps.getProperty("keyAlias")
+                keyPassword = keystoreProps.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         debug {
             isMinifyEnabled = false
@@ -264,6 +319,9 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            if (keystoreProps.isNotEmpty()) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
 
@@ -271,10 +329,38 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    kotlinOptions { jvmTarget = "17" }
-    buildFeatures { compose = true }
+    buildFeatures {
+        compose = true
+        buildConfig = true   // required by the DEBUG-gated Firebase collection toggle
+    }
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
+    }
+}
+
+// AGP 9 / Kotlin 2.2 — `kotlinOptions { jvmTarget = "17" }` was removed.
+// Use the typed `compilerOptions` block at the root of the script.
+kotlin {
+    compilerOptions {
+        jvmTarget.set(JvmTarget.JVM_17)
+    }
+}
+
+/* INCLUDE_FIREBASE: skip the google-services task per-variant when the matching
+ * `google-services.json` hasn't been dropped yet — otherwise every Gradle sync /
+ * `assembleDebug` / IDE reload fails before the user's first build. The plugin
+ * runs normally as soon as a JSON exists for that flavor (or in src/main/). */
+tasks.matching {
+    it.name.startsWith("process") && it.name.endsWith("GoogleServices")
+}.configureEach {
+    // AGP names these `process<Flavor><BuildType>GoogleServices`, e.g. `processDevDebugGoogleServices`.
+    val variant = name.removePrefix("process").removeSuffix("GoogleServices") // "DevDebug"
+    val flavor = listOf("Debug", "Release")
+        .firstNotNullOfOrNull { bt -> variant.removeSuffix(bt).takeIf { it != variant }?.lowercase() }
+        ?: variant.lowercase()
+    onlyIf {
+        listOf("src/$flavor/google-services.json", "src/main/google-services.json")
+            .any { project.file(it).exists() }
     }
 }
 
@@ -287,6 +373,7 @@ dependencies {
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)
     implementation(libs.compose.material3)
+    implementation(libs.compose.material.icons.core)
     debugImplementation(libs.compose.tooling)
     implementation(libs.compose.tooling.preview)
 
@@ -312,7 +399,7 @@ dependencies {
     // INCLUDE_DATASTORE
     implementation(libs.datastore.preferences)
 
-    // INCLUDE_FIREBASE
+    // INCLUDE_FIREBASE — no `-ktx` artifacts (deprecated since BOM 32.5).
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.crashlytics)
     implementation(libs.firebase.analytics)
@@ -323,6 +410,16 @@ dependencies {
     testImplementation(libs.kotlinx.coroutines.test)
 }
 ```
+
+**Placeholders to resolve at scaffold time:**
+
+| Placeholder | Resolution |
+|---|---|
+| `{{COMPILE_SDK}}` | Latest stable platform SDK (resolve via the Android SDK manager metadata or hard-code the current cycle's value — do not pin to a stale integer). |
+| `{{MIN_SDK}}` | Phase 0 answer (default 26; if INCLUDE_FIREBASE and the user wants dynamic color without a guard, propose 31). |
+| `{{TARGET_SDK}}` | Same as `{{COMPILE_SDK}}` unless the user has a reason to lag. |
+
+> **Optional: declarative compileSdk DSL.** AGP 8.10+ also supports `compileSdk { version = release(N) { minorApiLevel = 1 } }` for tracking minor platform updates. Stick with the integer form by default — it's simpler and the version catalog already gives you a single source of truth.
 
 ### `app/src/main/AndroidManifest.xml`
 
@@ -360,6 +457,8 @@ dependencies {
 ```xml
 <resources>
     <string name="app_name">{{APP_DISPLAY_NAME}}</string>
+    <string name="tab_feed">Feed</string>
+    <string name="tab_profile">Profile</string>
 </resources>
 ```
 
@@ -373,14 +472,27 @@ dependencies {
 
 ### `app/src/main/java/{{PACKAGE_PATH}}/{{APP_CLASS}}.kt`
 
+Single variant for Firebase and non-Firebase scaffolds. The `AnalyticsTracker` interface is always present (`data/analytics/AnalyticsModule` binds it to `FirebaseAnalyticsTracker` or `NoopAnalyticsTracker` based on the `INCLUDE_FIREBASE` flag), so this Application class doesn't change shape.
+
 ```kotlin
 package {{PACKAGE_ID}}
 
 import android.app.Application
 import dagger.hilt.android.HiltAndroidApp
+import {{PACKAGE_ID}}.domain.analytics.AnalyticsTracker
+import javax.inject.Inject
 
 @HiltAndroidApp
-class {{APP_CLASS}} : Application()
+class {{APP_CLASS}} : Application() {
+    @Inject lateinit var analytics: AnalyticsTracker
+
+    override fun onCreate() {
+        super.onCreate()
+        // No-op without Firebase. With Firebase: gates Crashlytics + Analytics
+        // collection so debug installs don't pollute prod dashboards.
+        analytics.setCollectionEnabled(!BuildConfig.DEBUG)
+    }
+}
 ```
 
 ### `app/src/main/java/{{PACKAGE_PATH}}/MainActivity.kt`
@@ -412,26 +524,37 @@ class MainActivity : ComponentActivity() {
 
 ### `app/src/main/java/{{PACKAGE_PATH}}/ui/theme/AppTheme.kt`
 
+Dynamic color is API 31+ only. Without the guard the app crashes at runtime on every device below Android 12 — roughly the bottom 10% of the install base. The fallback uses Material 3 baseline schemes; swap for a tonal palette of your brand colors when you have one.
+
 ```kotlin
 package {{PACKAGE_ID}}.ui.theme
 
+import android.os.Build
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.foundation.isSystemInDarkTheme
 
 @Composable
 fun AppTheme(content: @Composable () -> Unit) {
-    val context = LocalContext.current
-    val scheme = if (isSystemInDarkTheme()) dynamicDarkColorScheme(context)
-    else dynamicLightColorScheme(context)
+    val dark = isSystemInDarkTheme()
+    val scheme = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        val context = LocalContext.current
+        if (dark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+    } else {
+        if (dark) darkColorScheme() else lightColorScheme()
+    }
     MaterialTheme(colorScheme = scheme, content = content)
 }
 ```
 
 ### `app/src/main/java/{{PACKAGE_PATH}}/navigation/AppNavGraph.kt`
+
+Top-level nav has a single `Home` destination. The bottom-nav tabs are nested *inside* `HomeScreen` (its own `NavHost`), not flattened here — that keeps the bottom bar scoped to the Home graph and makes deep-link routing trivial when you add real auth/onboarding/settings destinations later.
 
 ```kotlin
 package {{PACKAGE_ID}}.navigation
@@ -441,23 +564,112 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import kotlinx.serialization.Serializable
-import {{PACKAGE_ID}}.ui.splash.SplashScreen
+import {{PACKAGE_ID}}.ui.home.HomeScreen
 
-@Serializable data object Splash
+@Serializable data object Home
 
 @Composable
 fun AppNavGraph() {
     val nav = rememberNavController()
-    NavHost(nav, startDestination = Splash) {
-        composable<Splash> { SplashScreen() }
+    NavHost(nav, startDestination = Home) {
+        composable<Home> { HomeScreen() }
     }
 }
 ```
 
-### `app/src/main/java/{{PACKAGE_PATH}}/ui/splash/SplashScreen.kt`
+### `app/src/main/java/{{PACKAGE_PATH}}/ui/home/HomeScreen.kt`
+
+Hosts the bottom `NavigationBar` and the *nested* tab `NavHost`. Tabs are typed `@Serializable` destinations. Selection is computed from the current back-stack entry via `NavDestination.hasRoute(KClass)` — no string comparisons, no hand-rolled selected-index state.
 
 ```kotlin
-package {{PACKAGE_ID}}.ui.splash
+package {{PACKAGE_ID}}.ui.home
+
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material3.Icon
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
+import androidx.navigation.NavDestination.Companion.hasRoute
+import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
+import androidx.navigation.compose.rememberNavController
+import kotlinx.serialization.Serializable
+import {{PACKAGE_ID}}.R
+import {{PACKAGE_ID}}.ui.home.feed.FeedScreen
+import {{PACKAGE_ID}}.ui.home.profile.ProfileScreen
+
+@Serializable sealed interface HomeRoute {
+    @Serializable data object Feed : HomeRoute
+    @Serializable data object Profile : HomeRoute
+}
+
+private data class HomeTab(
+    val route: HomeRoute,
+    val labelRes: Int,
+    val icon: ImageVector,
+)
+
+@Composable
+fun HomeScreen() {
+    val nav = rememberNavController()
+    val backStack by nav.currentBackStackEntryAsState()
+    val current = backStack?.destination
+
+    val tabs = listOf(
+        HomeTab(HomeRoute.Feed, R.string.tab_feed, Icons.Filled.Home),
+        HomeTab(HomeRoute.Profile, R.string.tab_profile, Icons.Filled.Person),
+    )
+
+    Scaffold(
+        bottomBar = {
+            NavigationBar {
+                tabs.forEach { tab ->
+                    val label = stringResource(tab.labelRes)
+                    NavigationBarItem(
+                        selected = current?.hasRoute(tab.route::class) == true,
+                        onClick = {
+                            nav.navigate(tab.route) {
+                                popUpTo(nav.graph.findStartDestination().id) { saveState = true }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
+                        },
+                        icon = { Icon(tab.icon, contentDescription = label) },
+                        label = { Text(label) },
+                    )
+                }
+            }
+        }
+    ) { padding ->
+        NavHost(
+            navController = nav,
+            startDestination = HomeRoute.Feed,
+            modifier = Modifier.padding(padding),
+        ) {
+            composable<HomeRoute.Feed> { FeedScreen() }
+            composable<HomeRoute.Profile> { ProfileScreen() }
+        }
+    }
+}
+```
+
+### `app/src/main/java/{{PACKAGE_PATH}}/ui/home/feed/FeedScreen.kt`
+
+Stateless composable + state holder pattern. The VM owns state; the composable observes via `collectAsStateWithLifecycle`.
+
+```kotlin
+package {{PACKAGE_ID}}.ui.home.feed
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -466,65 +678,134 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 @Composable
-fun SplashScreen(vm: SplashViewModel = hiltViewModel()) {
+fun FeedScreen(vm: FeedViewModel = hiltViewModel()) {
     val state by vm.state.collectAsStateWithLifecycle()
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text(state.message)
-    }
-}
-
-@Preview
-@Composable
-private fun SplashPreview() {
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text("{{APP_DISPLAY_NAME}}")
+        Text("Feed (${state.items.size} items)")
     }
 }
 ```
 
-### `app/src/main/java/{{PACKAGE_PATH}}/ui/splash/SplashViewModel.kt`
+### `app/src/main/java/{{PACKAGE_PATH}}/ui/home/feed/FeedViewModel.kt`
+
+Two responsibilities here demonstrated together: (1) MVVM `StateFlow<UiState>`, (2) Clean Architecture — depends only on the **`AnalyticsTracker` domain interface**, never on Firebase directly. Every screen-viewed event is a sealed `AnalyticsEvent` constant, not a magic string.
 
 ```kotlin
-package {{PACKAGE_ID}}.ui.splash
+package {{PACKAGE_ID}}.ui.home.feed
 
 import androidx.lifecycle.ViewModel
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import {{PACKAGE_ID}}.domain.analytics.AnalyticsEvent
+import {{PACKAGE_ID}}.domain.analytics.AnalyticsTracker
 import javax.inject.Inject
 
-data class SplashState(val message: String = "{{APP_DISPLAY_NAME}}")
+data class FeedState(val items: List<String> = emptyList())
 
 @HiltViewModel
-class SplashViewModel @Inject constructor() : ViewModel() {
-    private val _state = MutableStateFlow(SplashState())
-    val state: StateFlow<SplashState> = _state.asStateFlow()
+class FeedViewModel @Inject constructor(
+    private val analytics: AnalyticsTracker,
+) : ViewModel() {
+    private val _state = MutableStateFlow(FeedState())
+    val state: StateFlow<FeedState> = _state.asStateFlow()
+
+    init {
+        analytics.track(AnalyticsEvent.FeedViewed)
+    }
 }
 ```
 
-### `app/src/test/java/{{PACKAGE_PATH}}/ui/splash/SplashViewModelTest.kt`
+### `app/src/main/java/{{PACKAGE_PATH}}/ui/home/profile/ProfileScreen.kt`
 
 ```kotlin
-package {{PACKAGE_ID}}.ui.splash
+package {{PACKAGE_ID}}.ui.home.profile
+
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+
+@Composable
+fun ProfileScreen(vm: ProfileViewModel = hiltViewModel()) {
+    val state by vm.state.collectAsStateWithLifecycle()
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Text("Profile (${state.userName})")
+    }
+}
+```
+
+### `app/src/main/java/{{PACKAGE_PATH}}/ui/home/profile/ProfileViewModel.kt`
+
+```kotlin
+package {{PACKAGE_ID}}.ui.home.profile
+
+import androidx.lifecycle.ViewModel
+import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import {{PACKAGE_ID}}.domain.analytics.AnalyticsEvent
+import {{PACKAGE_ID}}.domain.analytics.AnalyticsTracker
+import javax.inject.Inject
+
+data class ProfileState(val userName: String = "guest")
+
+@HiltViewModel
+class ProfileViewModel @Inject constructor(
+    private val analytics: AnalyticsTracker,
+) : ViewModel() {
+    private val _state = MutableStateFlow(ProfileState())
+    val state: StateFlow<ProfileState> = _state.asStateFlow()
+
+    init {
+        analytics.track(AnalyticsEvent.ProfileViewed)
+    }
+}
+```
+
+### `app/src/test/java/{{PACKAGE_PATH}}/ui/home/feed/FeedViewModelTest.kt`
+
+Plain JUnit 4 + MockK + Turbine — no Robolectric. The test verifies *both* (a) the initial UiState shape and (b) that the VM tracks the right event on init, which is exactly the kind of regression the analytics layer is meant to catch.
+
+```kotlin
+package {{PACKAGE_ID}}.ui.home.feed
 
 import app.cash.turbine.test
+import io.mockk.mockk
+import io.mockk.verify
+import kotlinx.coroutines.test.runTest
+import org.junit.Assert.assertEquals
 import org.junit.Test
-import kotlin.test.assertEquals
+import {{PACKAGE_ID}}.domain.analytics.AnalyticsEvent
+import {{PACKAGE_ID}}.domain.analytics.AnalyticsTracker
 
-class SplashViewModelTest {
+class FeedViewModelTest {
     @Test
-    fun `emits initial state with app display name`() = kotlinx.coroutines.test.runTest {
-        val vm = SplashViewModel()
+    fun `emits empty initial state`() = runTest {
+        val analytics = mockk<AnalyticsTracker>(relaxed = true)
+        val vm = FeedViewModel(analytics)
         vm.state.test {
-            assertEquals("{{APP_DISPLAY_NAME}}", awaitItem().message)
+            assertEquals(emptyList<String>(), awaitItem().items)
             cancelAndIgnoreRemainingEvents()
         }
+    }
+
+    @Test
+    fun `tracks FeedViewed on init`() {
+        val analytics = mockk<AnalyticsTracker>(relaxed = true)
+        FeedViewModel(analytics)
+        verify(exactly = 1) { analytics.track(AnalyticsEvent.FeedViewed) }
     }
 }
 ```
@@ -562,6 +843,83 @@ sealed class DomainError(open val cause: Throwable? = null) {
     data class NotFound(override val cause: Throwable? = null) : DomainError(cause)
     data class Server(val code: Int, override val cause: Throwable? = null) : DomainError(cause)
     data class Unknown(override val cause: Throwable? = null) : DomainError(cause)
+}
+```
+
+### `app/src/test/java/{{PACKAGE_PATH}}/domain/OutcomeMapTest.kt`
+
+A 10-line test anchors the convention: `domain/` is plain Kotlin, framework-free, fast to test. Every new use case should have a sibling under `app/src/test/java/{{PACKAGE_PATH}}/domain/`.
+
+```kotlin
+package {{PACKAGE_ID}}.domain
+
+import org.junit.Assert.assertEquals
+import org.junit.Test
+
+class OutcomeMapTest {
+    @Test
+    fun `map transforms Success values`() {
+        val result = Outcome.Success(2).map { it * 3 }
+        assertEquals(Outcome.Success(6), result)
+    }
+
+    @Test
+    fun `map propagates Failure unchanged`() {
+        val original: Outcome<Int> = Outcome.Failure(DomainError.Network())
+        assertEquals(original, original.map { it * 3 })
+    }
+}
+```
+
+### Analytics: `domain/analytics/`
+
+The analytics interface is part of the **domain** layer so ViewModels and use cases depend on the abstraction, not on Firebase. The `data/` layer chooses the concrete implementation (Firebase or no-op) at wire-up time. This is the same pattern as repositories: the contract lives in `domain/`, the framework-bound code stays in `data/`. Without this split a `FeedViewModel` would import `com.google.firebase.*`, which leaks framework concerns into the layer that's supposed to be framework-free.
+
+The event taxonomy is a sealed type, not a string. Magic strings sprinkled across screens are how analytics dashboards quietly drift; a sealed type forces every new event to land in one place that's grep-able and reviewable.
+
+#### `app/src/main/java/{{PACKAGE_PATH}}/domain/analytics/AnalyticsTracker.kt`
+
+```kotlin
+package {{PACKAGE_ID}}.domain.analytics
+
+interface AnalyticsTracker {
+    fun track(event: AnalyticsEvent)
+    fun setUserProperty(key: String, value: String?)
+    /** Toggle collection at runtime (debug builds default off — see Application). */
+    fun setCollectionEnabled(enabled: Boolean)
+}
+```
+
+#### `app/src/main/java/{{PACKAGE_PATH}}/domain/analytics/AnalyticsEvent.kt`
+
+```kotlin
+package {{PACKAGE_ID}}.domain.analytics
+
+/**
+ * Add events here. The sealed type is the source of truth — implementations
+ * route `name` + `params` to whatever backend is wired up (Firebase, Mixpanel, no-op).
+ *
+ * Keep names snake_case (Firebase + most backends prefer it) and parameters
+ * primitive-only (String, Int, Long, Double, Boolean) — that's the intersection
+ * of what every backend can serialize without a custom mapper.
+ */
+sealed class AnalyticsEvent(
+    val name: String,
+    val params: Map<String, Any?> = emptyMap(),
+) {
+    data object HomeViewed : AnalyticsEvent(name = "home_viewed")
+    data object FeedViewed : AnalyticsEvent(name = "feed_viewed")
+    data object ProfileViewed : AnalyticsEvent(name = "profile_viewed")
+
+    data class ItemTapped(val itemId: String) : AnalyticsEvent(
+        name = "item_tapped",
+        params = mapOf("item_id" to itemId),
+    )
+
+    data class ScreenOpenedFromDeepLink(val route: String) : AnalyticsEvent(
+        name = "deep_link_open",
+        params = mapOf("route" to route),
+    )
 }
 ```
 
@@ -605,6 +963,61 @@ object ApiClientFactory {
 }
 ```
 
+### `app/src/main/java/{{PACKAGE_PATH}}/data/network/SampleApi.kt`
+
+Minimal Retrofit service + DTO so the scaffold demonstrates the full networking shape (interface + suspend fun + `@Serializable` DTO). Replace with real endpoints; the `ping` call is just an anchor.
+
+```kotlin
+package {{PACKAGE_ID}}.data.network
+
+import kotlinx.serialization.Serializable
+import retrofit2.http.GET
+
+interface SampleApi {
+    @GET("ping")
+    suspend fun ping(): PingDto
+}
+
+@Serializable
+data class PingDto(val ok: Boolean, val timestamp: Long)
+```
+
+### `app/src/main/java/{{PACKAGE_PATH}}/data/network/RemoteDataSource.kt`
+
+Thin wrapper that maps Retrofit DTOs to `domain/` types. Repository implementations consume `RemoteDataSource`, never `SampleApi` directly — this is where you map exceptions to `DomainError`.
+
+```kotlin
+package {{PACKAGE_ID}}.data.network
+
+import {{PACKAGE_ID}}.domain.DomainError
+import {{PACKAGE_ID}}.domain.Outcome
+import retrofit2.HttpException
+import java.io.IOException
+import javax.inject.Inject
+
+class RemoteDataSource @Inject constructor(
+    private val api: SampleApi,
+) {
+    suspend fun ping(): Outcome<Boolean> = runCatching { api.ping().ok }
+        .fold(
+            onSuccess = { Outcome.Success(it) },
+            onFailure = { e ->
+                Outcome.Failure(
+                    when (e) {
+                        is IOException -> DomainError.Network(e)
+                        is HttpException -> when (e.code()) {
+                            401 -> DomainError.Unauthorized(e)
+                            404 -> DomainError.NotFound(e)
+                            else -> DomainError.Server(e.code(), e)
+                        }
+                        else -> DomainError.Unknown(e)
+                    }
+                )
+            }
+        )
+}
+```
+
 ### `app/src/main/java/{{PACKAGE_PATH}}/data/di/DataModule.kt`
 
 ```kotlin
@@ -615,7 +1028,9 @@ import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import retrofit2.Retrofit
+import retrofit2.create
 import {{PACKAGE_ID}}.data.network.ApiClientFactory
+import {{PACKAGE_ID}}.data.network.SampleApi
 import javax.inject.Singleton
 
 @Module
@@ -623,8 +1038,147 @@ import javax.inject.Singleton
 object DataModule {
     @Provides @Singleton
     fun retrofit(): Retrofit = ApiClientFactory.retrofit("https://example.invalid/")
+
+    @Provides @Singleton
+    fun sampleApi(retrofit: Retrofit): SampleApi = retrofit.create()
 }
 ```
+
+### Analytics: `data/analytics/`
+
+The implementations of `AnalyticsTracker`. Two impls always exist; the Hilt module wires the right one based on `INCLUDE_FIREBASE`.
+
+- `NoopAnalyticsTracker` — always emitted. Used when `INCLUDE_FIREBASE=false`, also handy in instrumentation tests so a real Firebase backend isn't required.
+- `FirebaseAnalyticsTracker` — emitted only when `INCLUDE_FIREBASE=true`. Routes events through the Firebase SDK.
+
+#### `app/src/main/java/{{PACKAGE_PATH}}/data/analytics/NoopAnalyticsTracker.kt` *(always emit)*
+
+```kotlin
+package {{PACKAGE_ID}}.data.analytics
+
+import {{PACKAGE_ID}}.domain.analytics.AnalyticsEvent
+import {{PACKAGE_ID}}.domain.analytics.AnalyticsTracker
+import javax.inject.Inject
+import javax.inject.Singleton
+
+@Singleton
+class NoopAnalyticsTracker @Inject constructor() : AnalyticsTracker {
+    override fun track(event: AnalyticsEvent) = Unit
+    override fun setUserProperty(key: String, value: String?) = Unit
+    override fun setCollectionEnabled(enabled: Boolean) = Unit
+}
+```
+
+#### `app/src/main/java/{{PACKAGE_PATH}}/data/analytics/FirebaseAnalyticsTracker.kt` *(INCLUDE_FIREBASE only)*
+
+The mapping `AnalyticsEvent → Firebase logEvent` lives here, never in a ViewModel. If you ever switch backends (Mixpanel, Amplitude), only this file changes — domain + UI stay untouched. `paramsToBundle` deliberately handles only primitives: every analytics backend supports them and any caller passing something exotic deserves the compile-time push to flatten it.
+
+```kotlin
+package {{PACKAGE_ID}}.data.analytics
+
+import android.os.Bundle
+import com.google.firebase.Firebase
+import com.google.firebase.analytics.FirebaseAnalytics
+import com.google.firebase.analytics.analytics
+import com.google.firebase.crashlytics.crashlytics
+import {{PACKAGE_ID}}.domain.analytics.AnalyticsEvent
+import {{PACKAGE_ID}}.domain.analytics.AnalyticsTracker
+import javax.inject.Inject
+import javax.inject.Singleton
+
+@Singleton
+class FirebaseAnalyticsTracker @Inject constructor() : AnalyticsTracker {
+    private val analytics: FirebaseAnalytics get() = Firebase.analytics
+
+    override fun track(event: AnalyticsEvent) {
+        analytics.logEvent(event.name, event.params.toBundle())
+    }
+
+    override fun setUserProperty(key: String, value: String?) {
+        analytics.setUserProperty(key, value)
+    }
+
+    override fun setCollectionEnabled(enabled: Boolean) {
+        analytics.setAnalyticsCollectionEnabled(enabled)
+        Firebase.crashlytics.isCrashlyticsCollectionEnabled = enabled
+    }
+
+    private fun Map<String, Any?>.toBundle(): Bundle = Bundle().also { b ->
+        for ((k, v) in this) when (v) {
+            null -> { /* skip — Firebase rejects null */ }
+            is String -> b.putString(k, v)
+            is Int -> b.putInt(k, v)
+            is Long -> b.putLong(k, v)
+            is Double -> b.putDouble(k, v)
+            is Boolean -> b.putBoolean(k, v)
+            else -> b.putString(k, v.toString())
+        }
+    }
+}
+```
+
+#### `app/src/main/java/{{PACKAGE_PATH}}/data/analytics/AnalyticsModule.kt`
+
+One `@Binds` chooses the impl. Without Firebase, the no-op is bound — every VM still works, just no events leave the device.
+
+*Variant when `INCLUDE_FIREBASE=true`:*
+
+```kotlin
+package {{PACKAGE_ID}}.data.analytics
+
+import dagger.Binds
+import dagger.Module
+import dagger.hilt.InstallIn
+import dagger.hilt.components.SingletonComponent
+import {{PACKAGE_ID}}.domain.analytics.AnalyticsTracker
+
+@Module
+@InstallIn(SingletonComponent::class)
+abstract class AnalyticsModule {
+    @Binds
+    abstract fun bindAnalyticsTracker(impl: FirebaseAnalyticsTracker): AnalyticsTracker
+}
+```
+
+*Variant when `INCLUDE_FIREBASE=false`:*
+
+```kotlin
+package {{PACKAGE_ID}}.data.analytics
+
+import dagger.Binds
+import dagger.Module
+import dagger.hilt.InstallIn
+import dagger.hilt.components.SingletonComponent
+import {{PACKAGE_ID}}.domain.analytics.AnalyticsTracker
+
+@Module
+@InstallIn(SingletonComponent::class)
+abstract class AnalyticsModule {
+    @Binds
+    abstract fun bindAnalyticsTracker(impl: NoopAnalyticsTracker): AnalyticsTracker
+}
+```
+
+#### Convenience: `Composable` LaunchedEffect helper
+
+Most screen-viewed events should fire once per entry, not on every recomposition. A small helper makes the call site one line and keeps `LaunchedEffect(Unit)` boilerplate out of every screen.
+
+```kotlin
+package {{PACKAGE_ID}}.ui.common
+
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import {{PACKAGE_ID}}.domain.analytics.AnalyticsEvent
+import {{PACKAGE_ID}}.domain.analytics.AnalyticsTracker
+
+/** Fires once when this composable enters composition. */
+@Composable
+fun TrackScreen(tracker: AnalyticsTracker, event: AnalyticsEvent) {
+    LaunchedEffect(event) { tracker.track(event) }
+}
+```
+
+> The Feed/Profile VMs in this scaffold call `analytics.track(...)` from `init`, which is fine for a starter screen. For richer screens you may prefer `TrackScreen(...)` at the top of the composable so the event fires on every nav-entry rather than only on VM construction (relevant when a VM survives across nav transitions via `SavedStateHandle`).
 
 ---
 
@@ -721,18 +1275,13 @@ class AppPreferences(private val context: Context) {
 
 ## INCLUDE_FIREBASE additions
 
-In `{{APP_CLASS}}.onCreate` (no direct Firebase API calls at this layer — keep behind an interface; just ensure init + the plugin):
+Firebase auto-initializes via `FirebaseInitProvider` as soon as a `google-services.json` is present for the current flavor. The collection toggle in `Application.onCreate()` and the actual `logEvent` calls live in `data/analytics/FirebaseAnalyticsTracker` — see the **Analytics** section above. The Application class itself is the unified template (no Firebase-specific variant); it talks to `AnalyticsTracker` (the domain interface) which Hilt resolves to `FirebaseAnalyticsTracker` when this flag is on.
 
-```kotlin
-override fun onCreate() {
-    super.onCreate()
-    // google-services plugin initializes Firebase automatically when a
-    // google-services.json is present for the current flavor.
-    // Crashlytics collection is controlled via manifest meta-data or runtime setCrashlyticsCollectionEnabled().
-}
-```
+The Firebase artifacts in `app/build.gradle.kts` use `com.google.firebase:firebase-crashlytics` / `firebase-analytics` (no `-ktx` suffix) — the `*-ktx` variants have been empty stubs since Firebase BOM 32.5.
 
-Per-flavor file layout reminder: drop `google-services.json` into `app/src/dev/` and `app/src/prod/`. Never commit to `app/` root; the plugin will then apply to every variant.
+### Per-flavor `google-services.json`
+
+Drop `google-services.json` into `app/src/dev/` and `app/src/prod/`. Never commit to `app/` root; the plugin will apply to every variant. The `tasks.matching` block in `app/build.gradle.kts` (above) makes the build skip the google-services task per-variant until the matching JSON is present, so `./gradlew :app:installDevDebug` works end-to-end on a freshly scaffolded project.
 
 ---
 
@@ -747,6 +1296,29 @@ Per-flavor file layout reminder: drop `google-services.json` into `app/src/dev/`
 - **Hilt on the Application**, on every `Activity` / `ViewModel` / Service that needs injection. Don't sprinkle `EntryPoint` unless you truly have a non-Hilt consumer.
 - **`exportSchema = true`** is mandatory for Room once the app ships. The `schemas/` directory goes into version control.
 
+## Signing-config inputs
+
+The `app/build.gradle.kts` template above wires the release signing config to a root-level `keystore.properties` file. Commit a *redacted* `keystore.properties.example` so contributors know the shape; gitignore the real one.
+
+### `keystore.properties.example`
+
+```properties
+# Copy to keystore.properties (gitignored) and fill in real values.
+# Path is resolved relative to the repository root.
+storeFile=release.keystore
+storePassword=changeme
+keyAlias=release
+keyPassword=changeme
+```
+
+### `.gitignore` additions (root)
+
+```
+keystore.properties
+*.keystore
+/app/src/*/google-services.json
+```
+
 ## Post-scaffold manual steps
 
 Emit a block the command prints to the user:
@@ -754,20 +1326,17 @@ Emit a block the command prints to the user:
 ```
 Scaffold complete. Next steps:
 
-☐ Add release signing config in app/build.gradle.kts:
-    signingConfigs {
-        create("release") {
-            storeFile = file(System.getenv("SIGNING_KEYSTORE") ?: "release.keystore")
-            storePassword = System.getenv("SIGNING_STORE_PASSWORD")
-            keyAlias = System.getenv("SIGNING_KEY_ALIAS")
-            keyPassword = System.getenv("SIGNING_KEY_PASSWORD")
-        }
-    }
+☐ Generate a release keystore and copy keystore.properties.example → keystore.properties (gitignored).
+   keytool -genkey -v -keystore release.keystore -alias release -keyalg RSA -keysize 2048 -validity 10000
+   The signing config in app/build.gradle.kts auto-wires once keystore.properties exists.
 
 ☐ [if Firebase] drop google-services.json into app/src/dev/ and app/src/prod/.
-☐ [if Firebase] confirm ./gradlew :app:processDevDebugGoogleServices runs without error.
+   The processGoogleServices task skips per-variant until the JSON arrives, so the
+   project compiles and installs from the moment you finish scaffolding.
+
 ☐ [if Room] confirm app/schemas/ is populated after ./gradlew :app:kspDevDebugKotlin.
-☐ Replace the splash screen placeholder with the first real feature.
+☐ Replace the Feed and Profile tab placeholders with your first real features
+   (each tab is a typed `HomeRoute` destination under `ui/home/`).
 
 Build and run:
   ./gradlew :app:installDevDebug
