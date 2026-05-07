@@ -126,8 +126,10 @@ Scaffold complete. Next steps:
    keytool -genkey -v -keystore release.keystore -alias release -keyalg RSA -keysize 2048 -validity 10000
    The signing config in app/build.gradle.kts auto-wires once keystore.properties exists.
 ☐ [if Firebase] drop google-services.json into app/src/dev/ and app/src/prod/.
-   The processGoogleServices task is gated by an onlyIf guard, so the build already works
-   end-to-end without it — but Crashlytics/Analytics won't actually report until the JSON arrives.
+   The build-time guard skips processGoogleServices per-variant and the runtime
+   FirebaseAnalyticsTracker no-ops if FirebaseApp isn't initialized — so the
+   project compiles, installs, AND launches without it. Crashlytics/Analytics
+   start reporting as soon as the JSON lands.
 ☐ [if Room] run `./gradlew :app:kspDevDebugKotlin` — confirm app/schemas/ is populated.
 ☐ Replace the Feed and Profile tab placeholders with your first real features.
    The tabs live under ui/home/<tab>/ as typed HomeRoute.<Tab> destinations.

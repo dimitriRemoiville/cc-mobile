@@ -1073,32 +1073,46 @@ class NoopAnalyticsTracker @Inject constructor() : AnalyticsTracker {
 
 The mapping `AnalyticsEvent → Firebase logEvent` lives here, never in a ViewModel. If you ever switch backends (Mixpanel, Amplitude), only this file changes — domain + UI stay untouched. `paramsToBundle` deliberately handles only primitives: every analytics backend supports them and any caller passing something exotic deserves the compile-time push to flatten it.
 
+**Critical: the impl is defensive against an uninitialized FirebaseApp.** The build-time `tasks.matching { processGoogleServices }.onlyIf { ... }` guard lets the project compile and install before `google-services.json` arrives — but `FirebaseInitProvider` only runs when the JSON is present, so `Firebase.analytics` would otherwise crash with `Default FirebaseApp is not initialized in this process` the first time the Application calls `setCollectionEnabled` on cold start. The `isFirebaseAvailable` check at every call site silently no-ops until the JSON is dropped in; once it is, the same impl starts emitting events without a code change.
+
 ```kotlin
 package {{PACKAGE_ID}}.data.analytics
 
+import android.content.Context
 import android.os.Bundle
 import com.google.firebase.Firebase
+import com.google.firebase.FirebaseApp
 import com.google.firebase.analytics.FirebaseAnalytics
 import com.google.firebase.analytics.analytics
 import com.google.firebase.crashlytics.crashlytics
+import dagger.hilt.android.qualifiers.ApplicationContext
 import {{PACKAGE_ID}}.domain.analytics.AnalyticsEvent
 import {{PACKAGE_ID}}.domain.analytics.AnalyticsTracker
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
-class FirebaseAnalyticsTracker @Inject constructor() : AnalyticsTracker {
+class FirebaseAnalyticsTracker @Inject constructor(
+    @ApplicationContext private val context: Context,
+) : AnalyticsTracker {
+    /** False until google-services.json lands and FirebaseInitProvider runs. */
+    private val isFirebaseAvailable: Boolean
+        get() = FirebaseApp.getApps(context).isNotEmpty()
+
     private val analytics: FirebaseAnalytics get() = Firebase.analytics
 
     override fun track(event: AnalyticsEvent) {
+        if (!isFirebaseAvailable) return
         analytics.logEvent(event.name, event.params.toBundle())
     }
 
     override fun setUserProperty(key: String, value: String?) {
+        if (!isFirebaseAvailable) return
         analytics.setUserProperty(key, value)
     }
 
     override fun setCollectionEnabled(enabled: Boolean) {
+        if (!isFirebaseAvailable) return
         analytics.setAnalyticsCollectionEnabled(enabled)
         Firebase.crashlytics.isCrashlyticsCollectionEnabled = enabled
     }
@@ -1331,8 +1345,10 @@ Scaffold complete. Next steps:
    The signing config in app/build.gradle.kts auto-wires once keystore.properties exists.
 
 ☐ [if Firebase] drop google-services.json into app/src/dev/ and app/src/prod/.
-   The processGoogleServices task skips per-variant until the JSON arrives, so the
-   project compiles and installs from the moment you finish scaffolding.
+   The build-time guard skips processGoogleServices per-variant until the JSON
+   arrives, AND FirebaseAnalyticsTracker no-ops at runtime if FirebaseApp isn't
+   initialized — so the project compiles, installs, AND launches from the moment
+   you finish scaffolding. Events start flowing as soon as the JSON lands.
 
 ☐ [if Room] confirm app/schemas/ is populated after ./gradlew :app:kspDevDebugKotlin.
 ☐ Replace the Feed and Profile tab placeholders with your first real features
