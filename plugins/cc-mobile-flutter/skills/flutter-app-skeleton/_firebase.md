@@ -38,10 +38,11 @@ On Android, the `com.google.gms.google-services` plugin picks the flavor automat
 
 ## Init wiring
 
-In `main_dev.dart` / `main_prod.dart`:
+In `main_dev.dart` / `main_prod.dart`, initialize Firebase **before** `AppInitializer.initialize` so the runtime Crashlytics handlers are in place by the time the rest of the app boots:
 
 ```dart
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'firebase_options.dart';
 
 Future<void> main() async {
@@ -54,31 +55,89 @@ Future<void> main() async {
     return true;
   };
 
-  await App.run(flavor: Flavor.dev);
+  await AppInitializer.initialize(flavor: Flavor.dev);
+  runApp(const {{APP_CLASS}}App());
 }
 ```
 
-## Interfaces
+## Analytics tracker — `lib/core/analytics/firebase_analytics_tracker.dart`
 
-Crashlytics / Analytics / Remote Config **must not leak into domain or presentation**. Wrap each in a thin interface under `lib/domain/services/`:
+The Firebase implementation of the `IAnalyticsTracker` interface defined in the core skill. **It must be defensive against an uninitialized FirebaseApp**: the user may run the app before `flutterfire configure` produces `firebase_options.dart`, or before they drop `google-services.json` / `GoogleService-Info.plist` per flavor. Without the guard, the first call to `FirebaseAnalytics.instance` throws and the app crashes at startup.
+
+The pattern: gate every public method on `Firebase.apps.isNotEmpty`, no-op silently otherwise. Once Firebase is wired up, the same impl starts emitting events without a code change.
 
 ```dart
-abstract class ICrashReporter {
-  Future<void> recordError(Object error, StackTrace? stack, {bool fatal = false});
-  void setUserId(String? id);
-}
+import 'package:firebase_analytics/firebase_analytics.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
+import 'package:{{APP_NAME}}/core/analytics/analytics_event.dart';
+import 'package:{{APP_NAME}}/core/analytics/i_analytics_tracker.dart';
 
-abstract class IAnalytics {
-  Future<void> logEvent(String name, Map<String, Object?> params);
-}
+class FirebaseAnalyticsTracker implements IAnalyticsTracker {
+  const FirebaseAnalyticsTracker();
 
-abstract class IRemoteConfig {
-  bool boolean(String key, {bool fallback = false});
-  String string(String key, {String fallback = ''});
+  /// False until Firebase.initializeApp has succeeded. The app may launch
+  /// before flutterfire configure has produced firebase_options.dart.
+  bool get _isAvailable => Firebase.apps.isNotEmpty;
+
+  FirebaseAnalytics get _analytics => FirebaseAnalytics.instance;
+  FirebaseCrashlytics get _crashlytics => FirebaseCrashlytics.instance;
+
+  @override
+  Future<void> track(AnalyticsEvent event) async {
+    if (!_isAvailable) return;
+    await _analytics.logEvent(name: event.name, parameters: _sanitize(event.params));
+  }
+
+  @override
+  Future<void> setUserProperty(String key, String? value) async {
+    if (!_isAvailable) return;
+    await _analytics.setUserProperty(name: key, value: value);
+  }
+
+  @override
+  Future<void> setCollectionEnabled(bool enabled) async {
+    if (!_isAvailable) return;
+    await _analytics.setAnalyticsCollectionEnabled(enabled);
+    await _crashlytics.setCrashlyticsCollectionEnabled(enabled);
+  }
+
+  /// Firebase only accepts num / String params (Bool is coerced to int).
+  /// Anything exotic gets toString()'d; null entries are dropped.
+  Map<String, Object> _sanitize(Map<String, Object?> params) {
+    final out = <String, Object>{};
+    for (final entry in params.entries) {
+      final v = entry.value;
+      if (v == null) continue;
+      out[entry.key] = switch (v) {
+        num n => n,
+        String s => s,
+        bool b => b ? 1 : 0,
+        _ => v.toString(),
+      };
+    }
+    return out;
+  }
 }
 ```
 
-Implement under `lib/data/firebase/`. Register in `get_it` behind the interfaces.
+## DI swap (`lib/core/di/container.dart`)
+
+Replace the default `NoopAnalyticsTracker` registration with the Firebase impl when `INCLUDE_FIREBASE` is on:
+
+```dart
+// Default (INCLUDE_FIREBASE=false):
+sl.registerLazySingleton<IAnalyticsTracker>(NoopAnalyticsTracker.new);
+
+// INCLUDE_FIREBASE=true — replace the line above with:
+sl.registerLazySingleton<IAnalyticsTracker>(FirebaseAnalyticsTracker.new);
+```
+
+The interface contract is identical, so `AppInitializer` and every Cubit/Bloc that injects `IAnalyticsTracker` work without changes.
+
+## Crash reporter / remote config interfaces (optional second iteration)
+
+If you also want typed interfaces over Crashlytics + Remote Config (recommended once you have real flows that depend on them — see [firebase-services](../firebase-services/SKILL.md)), follow the same shape: `lib/core/crashlytics/i_crash_reporter.dart` + `lib/core/remote_config/i_remote_config.dart` with Firebase impls and Noop impls swapped via `container.dart` under the same flag. Don't import `firebase_*` anywhere outside `lib/core/<thing>/firebase_*_impl.dart`.
 
 ## App Check
 
