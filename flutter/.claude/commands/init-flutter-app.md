@@ -52,7 +52,18 @@ Don't try to resolve pub versions yourself — `dart pub add` does that in Phase
 
 Follow the skill's 11-step procedure in order. In outline:
 
-1. Run `flutter create --org <ORG_DOMAIN> --platforms=android,ios --project-name <APP_NAME> <APP_NAME>` in the parent directory.
+1. **Foundation — always layer on top of `flutter create`.** Never invent the platform folder structure by hand; let Flutter's CLI emit `android/`, `ios/`, the gradle wrapper, the xcodeproj, the manifest, the podfile, the asset registration. The rest of the scaffold then overlays `lib/`, `test/`, and the config files we care about. Run:
+
+   ```bash
+   flutter create \
+     --template=app \
+     --org <ORG_DOMAIN> \
+     --project-name <APP_NAME> \
+     --platforms=android,ios \
+     <APP_NAME>
+   ```
+
+   `--template=app` is the default but pinned explicitly so the intent is unambiguous. `--platforms=android,ios` keeps the surface small at init — the user can run `flutter create --platforms=web .` later to add a single platform deliberately rather than maintaining six from day one.
 2. `cd <APP_NAME>`. Seed `pubspec.yaml` with the non-dependency shell from the skill, then add dependencies with `dart pub add` (grouped as shown). Do not hardcode version numbers — `dart pub add` resolves current compatible versions live and writes the pins into the generated `pubspec.yaml`. After `pub get` succeeds, sanity-check the resolved set against the skill's "Compatibility traps" table — those are the failure patterns to recognize, not version pins. Never use `intl: any` — if pub writes `intl: any`, replace with a caret constraint on whatever was resolved.
 3. Replace `analysis_options.yaml` with the blueprint version (promotions to `error` for `avoid_print`, `unawaited_futures`, `prefer_const_constructors`, etc.).
 4. Add the blueprint `build.yaml` for codegen.
@@ -70,11 +81,11 @@ Follow the skill's 11-step procedure in order. In outline:
    - `core/database/app_database.dart` + `executor.dart` (only if `INCLUDE_DRIFT`)
    - `feature/home/di/home_module.dart`
    - `feature/home/presentation/pages/home_shell_page.dart` (Material 3 `NavigationBar` + `StatefulNavigationShell`), `feed_page.dart`, `profile_page.dart`
-   - `feature/home/presentation/cubit/feed_cubit.dart` + `feed_state.dart` (freezed) + `profile_cubit.dart` + `profile_state.dart` (each Cubit injects `IAnalyticsTracker` and tracks the screen-viewed event from its constructor)
+   - `feature/home/presentation/bloc/feed_bloc.dart` + `feed_event.dart` (sealed `FeedEvent` / `FeedStarted`) + `feed_state.dart` (freezed) + `profile_bloc.dart` + `profile_event.dart` + `profile_state.dart`. Each Bloc injects `IAnalyticsTracker`, registers an `on<*Started>` handler with the `droppable()` transformer, and tracks the screen-viewed event inside the handler. The page wires the initial event with `..add(const FeedStarted())` at `BlocProvider.create` time — never as a side-effect in the constructor body.
    - `routing/app_router.dart` (`@TypedStatefulShellRoute<HomeShellRoute>` with `FeedRoute` + `ProfileRoute` typed branches; **no splash**)
    - `shared/theme/app_theme.dart` + `app_spacing.dart`
    - `l10n/app_en.arb`
-6. Create the blueprint `test/` tree: `helpers/pump_app.dart`, `helpers/fakes.dart`, `smoke_test.dart`, `feature/home/feed_cubit_test.dart` (mocks `IAnalyticsTracker` with `mocktail` — anchors the convention for analytics-emitting Cubits).
+6. Create the blueprint `test/` tree: `helpers/pump_app.dart`, `helpers/fakes.dart`, `smoke_test.dart`, `feature/home/feed_bloc_test.dart` (mocks `IAnalyticsTracker` with `mocktail` + `registerFallbackValue` for `AnalyticsEvent`, and uses `blocTest` to assert that adding `FeedStarted` results in exactly one `analytics.track(FeedViewed)` call — anchors the convention for analytics-emitting Blocs).
 7. Run `flutter pub get`.
 8. Run `dart run build_runner build --delete-conflicting-outputs` to generate freezed, json_serializable, go_router, and (if enabled) drift files.
 9. Run `dart analyze --fatal-infos --fatal-warnings` and `dart format --set-exit-if-changed .`. Report failures; do not auto-fix unless they are trivial formatting.
@@ -87,9 +98,9 @@ Print a concise checklist to the user, something like:
 
 ```
 Scaffold complete. The app boots into a Material 3 Home shell with Feed + Profile
-bottom-nav tabs. Each tab's Cubit fires its screen-viewed AnalyticsEvent on init
-through the IAnalyticsTracker interface (Noop by default, Firebase under
-INCLUDE_FIREBASE).
+bottom-nav tabs. Each tab's Bloc dispatches its <Tab>Started event on entry and
+the on<*Started> handler tracks the screen-viewed AnalyticsEvent through the
+IAnalyticsTracker interface (Noop by default, Firebase under INCLUDE_FIREBASE).
 
 Next steps you need to do manually:
 
@@ -117,7 +128,7 @@ Run it:
 - **No silent substitutions.** If a pinned version in the skill no longer resolves, surface the error and ask before bumping.
 - **One command per Bash call where it matters** — keep `flutter create`, `flutter pub get`, and `build_runner` in separate visible calls so the user can see their output.
 - **Never commit.** Leave the new app uncommitted; the user can review and commit themselves.
-- **Do not scaffold real features** — `/init-flutter-app` stops once the Home shell with Feed + Profile tabs renders and `feed_cubit_test` passes. Use `/new-feature <name>` for actual product features.
+- **Do not scaffold real features** — `/init-flutter-app` stops once the Home shell with Feed + Profile tabs renders and `feed_bloc_test` passes. Use `/new-feature <name>` for actual product features.
 - **Do not create files outside the new app** (no docs, no READMEs beyond the one `flutter create` provides). The user asked for a skeleton, not a documentation drop.
 
 ## When to say no

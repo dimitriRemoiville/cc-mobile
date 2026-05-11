@@ -44,13 +44,26 @@ Do these in order. Skip the optional steps the user opted out of.
 10. **Run `dart analyze --fatal-infos --fatal-warnings`** and fix anything the skeleton tripped.
 11. **Report the manual Android / iOS flavor steps** — those require Xcode + Gradle edits the CLI shouldn't do automatically.
 
-## Step 1 — `flutter create`
+## Step 1 — `flutter create` (foundation)
+
+The scaffold is **always layered on top of `flutter create`'s output**, never invented from scratch. Flutter's CLI owns the platform folder structure (`android/`, `ios/`, gradle wrapper, xcodeproj, asset registration, Info.plist defaults, podfile, manifest). Re-implementing that by hand is brittle: Flutter SDK updates routinely tweak these files, and any hand-rolled skeleton would fall out of sync within a release or two. Running `flutter create` first means the scaffold inherits the canonical project shape for whatever SDK the user has installed; the rest of this skill only overlays the `lib/`, `test/`, and config files we care about.
 
 ```bash
-flutter create --org {{ORG_DOMAIN}} --project-name {{APP_NAME}} --platforms=android,ios .
+flutter create \
+  --template=app \
+  --org {{ORG_DOMAIN}} \
+  --project-name {{APP_NAME}} \
+  --platforms=android,ios \
+  .
 ```
 
-(If the directory already has files, run in an empty subfolder or accept the overwrite warnings.)
+Flags that matter:
+
+- `--template=app` — the default, but pinned explicitly so the intent is unambiguous (not `package`, not `plugin`, not `module`). If the user later wants a Flutter module embedded in a native host, they should run `/init-flutter-app` separately and pass `--template=module` themselves; this scaffold is app-shaped.
+- `--platforms=android,ios` — restrict to mobile. Adding `web`, `windows`, `linux`, `macos` here would scaffold those platform folders too, all of which would need their own flavor configuration, signing, icon, splash, and CI plumbing this skill doesn't cover. Keeping the surface small at init time means the user can run `flutter create --platforms=web .` later to add a single platform deliberately, rather than maintaining six.
+- `--org {{ORG_DOMAIN}}` — controls the reverse-DNS namespace used by Android (`applicationId`) and iOS (`PRODUCT_BUNDLE_IDENTIFIER`). This is the single hardest thing to change after the fact, so the user is asked for it in Phase 0.
+
+(If the directory already has files, run in an empty subfolder or accept the overwrite warnings — but the `/init-flutter-app` command should have already bailed in that case during Phase 0's directory-state check.)
 
 ## Step 2 — `pubspec.yaml`
 
@@ -294,10 +307,12 @@ lib/
 │           │   ├── home_shell_page.dart
 │           │   ├── feed_page.dart
 │           │   └── profile_page.dart
-│           └── cubit/
-│               ├── feed_cubit.dart
+│           └── bloc/
+│               ├── feed_bloc.dart
+│               ├── feed_event.dart
 │               ├── feed_state.dart
-│               ├── profile_cubit.dart
+│               ├── profile_bloc.dart
+│               ├── profile_event.dart
 │               └── profile_state.dart
 ├── l10n/
 │   └── app_en.arb
@@ -924,7 +939,23 @@ class HomeShellPage extends StatelessWidget {
 }
 ```
 
-### `lib/feature/home/presentation/cubit/feed_state.dart`
+### `lib/feature/home/presentation/bloc/feed_event.dart`
+
+Plain Dart-3 sealed class — no freezed needed for event taxonomies in this project (events are values; equality is by identity for `const` data objects, and the exhaustive `switch` in the `on<E>` handler is enforced by the type system). Add new events as `final class` entries here.
+
+```dart
+sealed class FeedEvent {
+  const FeedEvent();
+}
+
+/// Fired once when the page mounts. Triggers the screen-viewed analytics event
+/// and any first-load side-effects (later: a paginated fetch from a repository).
+final class FeedStarted extends FeedEvent {
+  const FeedStarted();
+}
+```
+
+### `lib/feature/home/presentation/bloc/feed_state.dart`
 
 ```dart
 import 'package:freezed_annotation/freezed_annotation.dart';
@@ -939,48 +970,55 @@ class FeedState with _$FeedState {
 }
 ```
 
-### `lib/feature/home/presentation/cubit/feed_cubit.dart`
+### `lib/feature/home/presentation/bloc/feed_bloc.dart`
 
-Demonstrates the canonical pattern at the same time as feedback #2 + #3: the Cubit depends only on `IAnalyticsTracker` (the cross-cutting domain interface), never on Firebase. Tracks the screen-viewed event from the constructor body so it fires once per Cubit instance.
+Canonical event-driven Bloc: takes `IAnalyticsTracker` as a dependency, registers one handler per event variant, and never reaches for Firebase directly. The analytics call lives inside the `_onStarted` handler — not in the constructor body — so the side-effect is reproducible, testable with `blocTest`, and easy to extend with additional work (e.g. dispatching a `FeedFetched` event once the analytics call resolves). `bloc_concurrency`'s `droppable()` transformer prevents `FeedStarted` from being processed twice if the page somehow re-emits it on a rebuild.
 
 ```dart
+import 'package:bloc_concurrency/bloc_concurrency.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:{{APP_NAME}}/core/analytics/analytics_event.dart';
 import 'package:{{APP_NAME}}/core/analytics/i_analytics_tracker.dart';
-import 'package:{{APP_NAME}}/feature/home/presentation/cubit/feed_state.dart';
+import 'package:{{APP_NAME}}/feature/home/presentation/bloc/feed_event.dart';
+import 'package:{{APP_NAME}}/feature/home/presentation/bloc/feed_state.dart';
 
-class FeedCubit extends Cubit<FeedState> {
-  FeedCubit({required IAnalyticsTracker analytics})
+class FeedBloc extends Bloc<FeedEvent, FeedState> {
+  FeedBloc({required IAnalyticsTracker analytics})
       : _analytics = analytics,
         super(const FeedState()) {
-    unawaited(_analytics.track(const FeedViewed()));
+    on<FeedStarted>(_onStarted, transformer: droppable());
   }
 
   final IAnalyticsTracker _analytics;
+
+  Future<void> _onStarted(FeedStarted event, Emitter<FeedState> emit) async {
+    await _analytics.track(const FeedViewed());
+  }
 }
 ```
 
 ### `lib/feature/home/presentation/pages/feed_page.dart`
 
-Stateless page that injects the Cubit via `BlocProvider`. The Cubit is built off `sl<IAnalyticsTracker>()` so it picks up whichever impl is registered (Noop or Firebase).
+Stateless page that wires the Bloc via `BlocProvider` and fires the initial `FeedStarted` event with the `..add(...)` cascade. The Bloc is built off `sl<IAnalyticsTracker>()` so it picks up whichever impl is registered (Noop or Firebase).
 
 ```dart
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:{{APP_NAME}}/core/analytics/i_analytics_tracker.dart';
 import 'package:{{APP_NAME}}/core/di/container.dart';
-import 'package:{{APP_NAME}}/feature/home/presentation/cubit/feed_cubit.dart';
-import 'package:{{APP_NAME}}/feature/home/presentation/cubit/feed_state.dart';
+import 'package:{{APP_NAME}}/feature/home/presentation/bloc/feed_bloc.dart';
+import 'package:{{APP_NAME}}/feature/home/presentation/bloc/feed_event.dart';
+import 'package:{{APP_NAME}}/feature/home/presentation/bloc/feed_state.dart';
 
 class FeedPage extends StatelessWidget {
   const FeedPage({super.key});
 
   @override
   Widget build(BuildContext context) => BlocProvider(
-        create: (_) => FeedCubit(analytics: sl<IAnalyticsTracker>()),
+        create: (_) => FeedBloc(analytics: sl<IAnalyticsTracker>())..add(const FeedStarted()),
         child: Scaffold(
           appBar: AppBar(title: const Text('Feed')),
-          body: BlocBuilder<FeedCubit, FeedState>(
+          body: BlocBuilder<FeedBloc, FeedState>(
             builder: (context, state) => Center(
               child: Text('Feed (${state.items.length} items)'),
             ),
@@ -990,7 +1028,19 @@ class FeedPage extends StatelessWidget {
 }
 ```
 
-### `lib/feature/home/presentation/cubit/profile_state.dart`
+### `lib/feature/home/presentation/bloc/profile_event.dart`
+
+```dart
+sealed class ProfileEvent {
+  const ProfileEvent();
+}
+
+final class ProfileStarted extends ProfileEvent {
+  const ProfileStarted();
+}
+```
+
+### `lib/feature/home/presentation/bloc/profile_state.dart`
 
 ```dart
 import 'package:freezed_annotation/freezed_annotation.dart';
@@ -1005,22 +1055,28 @@ class ProfileState with _$ProfileState {
 }
 ```
 
-### `lib/feature/home/presentation/cubit/profile_cubit.dart`
+### `lib/feature/home/presentation/bloc/profile_bloc.dart`
 
 ```dart
+import 'package:bloc_concurrency/bloc_concurrency.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:{{APP_NAME}}/core/analytics/analytics_event.dart';
 import 'package:{{APP_NAME}}/core/analytics/i_analytics_tracker.dart';
-import 'package:{{APP_NAME}}/feature/home/presentation/cubit/profile_state.dart';
+import 'package:{{APP_NAME}}/feature/home/presentation/bloc/profile_event.dart';
+import 'package:{{APP_NAME}}/feature/home/presentation/bloc/profile_state.dart';
 
-class ProfileCubit extends Cubit<ProfileState> {
-  ProfileCubit({required IAnalyticsTracker analytics})
+class ProfileBloc extends Bloc<ProfileEvent, ProfileState> {
+  ProfileBloc({required IAnalyticsTracker analytics})
       : _analytics = analytics,
         super(const ProfileState()) {
-    unawaited(_analytics.track(const ProfileViewed()));
+    on<ProfileStarted>(_onStarted, transformer: droppable());
   }
 
   final IAnalyticsTracker _analytics;
+
+  Future<void> _onStarted(ProfileStarted event, Emitter<ProfileState> emit) async {
+    await _analytics.track(const ProfileViewed());
+  }
 }
 ```
 
@@ -1031,18 +1087,19 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:{{APP_NAME}}/core/analytics/i_analytics_tracker.dart';
 import 'package:{{APP_NAME}}/core/di/container.dart';
-import 'package:{{APP_NAME}}/feature/home/presentation/cubit/profile_cubit.dart';
-import 'package:{{APP_NAME}}/feature/home/presentation/cubit/profile_state.dart';
+import 'package:{{APP_NAME}}/feature/home/presentation/bloc/profile_bloc.dart';
+import 'package:{{APP_NAME}}/feature/home/presentation/bloc/profile_event.dart';
+import 'package:{{APP_NAME}}/feature/home/presentation/bloc/profile_state.dart';
 
 class ProfilePage extends StatelessWidget {
   const ProfilePage({super.key});
 
   @override
   Widget build(BuildContext context) => BlocProvider(
-        create: (_) => ProfileCubit(analytics: sl<IAnalyticsTracker>()),
+        create: (_) => ProfileBloc(analytics: sl<IAnalyticsTracker>())..add(const ProfileStarted()),
         child: Scaffold(
           appBar: AppBar(title: const Text('Profile')),
-          body: BlocBuilder<ProfileCubit, ProfileState>(
+          body: BlocBuilder<ProfileBloc, ProfileState>(
             builder: (context, state) => Center(
               child: Text('Profile (${state.userName})'),
             ),
@@ -1169,9 +1226,9 @@ void main() {
 }
 ```
 
-### `test/feature/home/feed_cubit_test.dart`
+### `test/feature/home/feed_bloc_test.dart`
 
-Anchors the convention: every Cubit/Bloc that depends on `IAnalyticsTracker` should have a sibling test that asserts the right event fires. `mocktail` (not `mockito`) is the project default; the fake must `registerFallbackValue` for any `AnalyticsEvent` argument used with `any()`.
+Anchors the convention: every Bloc that depends on `IAnalyticsTracker` should have a sibling test that asserts the right event fires. `mocktail` (not `mockito`) is the project default; the fake must `registerFallbackValue` for any `AnalyticsEvent` argument used with `any()`. `blocTest` from `bloc_test` is the canonical way to verify a Bloc — `build → act → verify`.
 
 ```dart
 import 'package:bloc_test/bloc_test.dart';
@@ -1179,8 +1236,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:{{APP_NAME}}/core/analytics/analytics_event.dart';
 import 'package:{{APP_NAME}}/core/analytics/i_analytics_tracker.dart';
-import 'package:{{APP_NAME}}/feature/home/presentation/cubit/feed_cubit.dart';
-import 'package:{{APP_NAME}}/feature/home/presentation/cubit/feed_state.dart';
+import 'package:{{APP_NAME}}/feature/home/presentation/bloc/feed_bloc.dart';
+import 'package:{{APP_NAME}}/feature/home/presentation/bloc/feed_event.dart';
+import 'package:{{APP_NAME}}/feature/home/presentation/bloc/feed_state.dart';
 
 class _MockAnalytics extends Mock implements IAnalyticsTracker {}
 
@@ -1191,7 +1249,7 @@ void main() {
     registerFallbackValue(_FakeAnalyticsEvent());
   });
 
-  group('FeedCubit', () {
+  group('FeedBloc', () {
     late _MockAnalytics analytics;
 
     setUp(() {
@@ -1200,15 +1258,19 @@ void main() {
     });
 
     test('starts with empty FeedState', () {
-      final cubit = FeedCubit(analytics: analytics);
-      expect(cubit.state, const FeedState());
-      cubit.close();
+      final bloc = FeedBloc(analytics: analytics);
+      expect(bloc.state, const FeedState());
+      bloc.close();
     });
 
-    test('tracks FeedViewed on construction', () {
-      FeedCubit(analytics: analytics).close();
-      verify(() => analytics.track(any(that: isA<FeedViewed>()))).called(1);
-    });
+    blocTest<FeedBloc, FeedState>(
+      'tracks FeedViewed when FeedStarted is added',
+      build: () => FeedBloc(analytics: analytics),
+      act: (bloc) => bloc.add(const FeedStarted()),
+      verify: (_) {
+        verify(() => analytics.track(any(that: isA<FeedViewed>()))).called(1);
+      },
+    );
   });
 }
 ```
@@ -1270,7 +1332,7 @@ flutter test
 - [ ] `dart run build_runner build --delete-conflicting-outputs` generated `app_router.g.dart`, `feed_state.freezed.dart`, `profile_state.freezed.dart` (and `app_database.g.dart` if INCLUDE_DRIFT).
 - [ ] `dart analyze` is clean.
 - [ ] `flutter run --flavor dev --target lib/main_dev.dart` boots to the Home shell with Feed + Profile bottom-nav tabs.
-- [ ] `flutter test` passes (`smoke_test`, `feed_cubit_test`).
+- [ ] `flutter test` passes (`smoke_test`, `feed_bloc_test`).
 - [ ] Android flavors set up in `android/app/build.gradle.kts`.
 - [ ] iOS schemes + configurations set up in Xcode.
 - [ ] (If INCLUDE_FIREBASE) `flutterfire configure` run for both flavors. The `FirebaseAnalyticsTracker` no-ops at runtime if Firebase isn't initialized yet, so the app launches regardless; events start flowing once configure has run + the JSON/plist drops are in place.
