@@ -163,23 +163,22 @@ dart pub add --dev drift_dev
 dart pub add --dev flutter_lints
 ```
 
-### 2c — Floor constraints (verify after `pub get`)
+### 2c — Compatibility traps (no fixed versions — describes the symptom + fix)
 
-These are engineering requirements, not snapshots. If `flutter pub deps` reports anything below a floor, stop and ask. Bump a floor only when the reasoning that drove it changes.
+`dart pub add` already resolves to the latest stable that satisfies the Flutter SDK constraints, so the templates **never** pin numbers. The traps below are the failure modes you'll recognize when the resolved set isn't compatible — they describe the symptom and the fix without naming a specific version that would age.
 
-| Package | Floor | Why |
+| Trap | Symptom | Fix |
 |---|---|---|
-| `go_router` | `>=14.0.0` | Typed routes (`@TypedGoRoute`) landed in 14.x. Earlier versions only have string routes. |
-| `freezed` / `freezed_annotation` | `>=3.0.0` | Dart 3 sealed-class unions + exhaustive `switch`. |
-| `fpdart` | `>=1.0.0` | API stabilized at 1.0; pre-1.0 has breaking renames. |
-| `flutter_bloc` | `>=9.0.0` | Current major; aligns with `bloc_concurrency` and modern `BlocSelector`. |
-| `get_it` | `>=8.0.0` | Scope API used by test helpers. |
-| `drift` / `drift_dev` | `>=2.20.0` | Pair: major match between drift and drift_dev is required. |
-| `mocktail` | `>=1.0.0` | Null-safe API. |
-| `intl` | pin to whatever Flutter resolves | Never `any`. Flutter bundles an `intl` constraint; use what resolves. |
-| `sqlcipher_flutter_libs` | `>=0.6.0` | Ships combined SQLite + encryption. If the user already has `sqlite3_flutter_libs`, hard fail — they conflict. |
+| **Pre-typed-routes go_router** | `Undefined name '$appRoutes'` / `Undefined class 'TypedGoRoute'`. | The typed-route generator (`@TypedGoRoute`) lives in modern `go_router`. If the resolver landed an older major, bump the SDK floor (the user's Flutter is too old) or upgrade `go_router` explicitly. |
+| **freezed v2 vs v3 sealed-class output** | Generated files use `mixin _$Foo` instead of `sealed class _$Foo` and exhaustive switch fails. | freezed v3+ generates Dart-3 sealed unions. If the resolver lands v2, the rest of the templates won't pattern-match exhaustively. Bump `freezed` major. |
+| **drift / drift_dev majors mismatched** | `incompatible drift_dev` resolver error or runtime "schema version mismatch". | The two must share a major. `dart pub add drift drift_dev` in one command keeps them aligned; if you add separately, verify with `dart pub deps`. |
+| **mocktail still null-unsafe** | `Null check used on a null value` from `when()` setups. | Pre-1.0 mocktail has the old API. Bump major. |
+| **intl resolver lock** | `dart pub add intl` refuses, or pulls a version below what Flutter ships. | Never `any` — pin the caret constraint of whatever `flutter pub deps` reports for `intl`. The Flutter SDK bundles a constraint; defer to it. |
+| **sqlcipher + sqlite3_flutter_libs collision** | Native build fails with "duplicate symbol _sqlite3_*". | These two ship the same SQLite native binary. Pick one. The skill uses `sqlcipher_flutter_libs` (it provides BOTH SQLite + encryption); never add `sqlite3_flutter_libs` alongside it. |
+| **fpdart pre-1.0 renames** | `Either.right(...)` works, then later `Right(...)` doesn't. | Pre-1.0 fpdart had different names. Bump major. |
+| **get_it scope API missing** | `pushNewScope` / `popScope` undefined in tests. | Old get_it doesn't have scopes. Test helpers in this skill rely on them. Bump major. |
 
-If `dart pub add` refuses a package because of SDK constraints, do not work around it by lowering the floor. Surface the resolver output and stop.
+If `dart pub add` refuses a package because of SDK constraints, do **not** work around it by lowering a floor or pinning down. Surface the resolver output and stop — the user's Flutter SDK is the cap, and they should bump that, not retreat to older packages.
 
 ### 2d — Rule of thumb
 
@@ -187,7 +186,16 @@ If `dart pub add` refuses a package because of SDK constraints, do not work arou
 
 Do remind the user: never use `intl: any`. If they later add `intl` themselves, use a caret constraint.
 
-## Step 3 — `analysis_options.yaml`
+## Step 2.5 — Verify the Flutter SDK floor (online)
+
+`dart pub add` resolves all pub.dev packages live, so the only thing the user's local environment can pin too low is the **Flutter SDK itself**. The compatibility traps above all assume Flutter ≥ 3.35 (Dart ≥ 3.8) — Dart 3 sealed classes, exhaustive switch, and modern `intl` all need it.
+
+Two checks, in order:
+
+1. **Local check.** Run `flutter --version` and parse the first line (`Flutter <X.Y.Z> ...`). If `<X.Y.Z>` is below the floor in `environment.flutter` from the seed `pubspec.yaml` above, stop and ask the user to upgrade. Don't lower the floor.
+2. **Online sanity check (only if you can't read local — e.g. the user is on a sandbox).** `WebFetch` `https://storage.googleapis.com/flutter_infra_release/releases/releases_macos.json` (or `_linux.json` / `_windows.json`) and pull `current_release.stable` → look up that hash in `releases[]` to find the stable version string. Use that as a "known good" reference; report if the user's local Flutter is more than one minor version behind.
+
+The goal is to surface "your Flutter is too old" *before* `dart pub add` tries 30 packages and fails on each one in confusing ways.
 
 ```yaml
 include: package:flutter_lints/flutter.yaml
@@ -252,6 +260,11 @@ lib/
 ├── app_initializer.dart
 ├── {{APP_NAME}}_app.dart
 ├── core/
+│   ├── analytics/                         # always emitted (interface + Noop impl)
+│   │   ├── i_analytics_tracker.dart
+│   │   ├── analytics_event.dart
+│   │   ├── noop_analytics_tracker.dart
+│   │   └── firebase_analytics_tracker.dart    # only if INCLUDE_FIREBASE
 │   ├── auth/
 │   │   └── auth_token_provider.dart
 │   ├── config/
@@ -273,7 +286,19 @@ lib/
 │   └── notifications/                     # only if INCLUDE_NOTIFICATIONS
 │       └── .gitkeep
 ├── feature/
-│   └── .gitkeep
+│   └── home/                              # bottom-nav shell + Feed/Profile tabs
+│       ├── di/
+│       │   └── home_module.dart
+│       └── presentation/
+│           ├── pages/
+│           │   ├── home_shell_page.dart
+│           │   ├── feed_page.dart
+│           │   └── profile_page.dart
+│           └── cubit/
+│               ├── feed_cubit.dart
+│               ├── feed_state.dart
+│               ├── profile_cubit.dart
+│               └── profile_state.dart
 ├── l10n/
 │   └── app_en.arb
 ├── routing/
@@ -319,6 +344,8 @@ Future<void> main() async {
 ### `lib/app_initializer.dart`
 
 ```dart
+import 'package:flutter/foundation.dart';
+import 'package:{{APP_NAME}}/core/analytics/i_analytics_tracker.dart';
 import 'package:{{APP_NAME}}/core/config/app_config.dart';
 import 'package:{{APP_NAME}}/core/config/flavor.dart';
 import 'package:{{APP_NAME}}/core/di/container.dart';
@@ -328,8 +355,14 @@ abstract final class AppInitializer {
     AppConfig.init(flavor: flavor);
     // INCLUDE_FIREBASE:
     //   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-    //   FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterError;
+    //   FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterFatalError;
     await initializeDependencies(flavor: flavor);
+
+    // Toggle analytics collection. No-op without Firebase; with Firebase it
+    // gates Crashlytics + Analytics so debug installs don't pollute prod
+    // dashboards. The toggle goes through the IAnalyticsTracker interface so
+    // this file never imports firebase_*.
+    await sl<IAnalyticsTracker>().setCollectionEnabled(!kDebugMode);
   }
 }
 ```
@@ -459,6 +492,79 @@ final class UnknownFailure extends Failure {
   const UnknownFailure({required super.message, super.rootCause, super.stackTrace});
 }
 ```
+
+### `lib/core/analytics/i_analytics_tracker.dart`
+
+Cross-cutting interface. Cubits/Blocs depend on this, never on `firebase_analytics` directly. The taxonomy lives in a sealed `AnalyticsEvent` next door so every event lands in one grep-able place — magic strings sprinkled across screens are how analytics dashboards quietly drift.
+
+```dart
+import 'package:{{APP_NAME}}/core/analytics/analytics_event.dart';
+
+abstract interface class IAnalyticsTracker {
+  Future<void> track(AnalyticsEvent event);
+  Future<void> setUserProperty(String key, String? value);
+  /// Toggle collection at runtime (debug builds default off — see AppInitializer).
+  Future<void> setCollectionEnabled(bool enabled);
+}
+```
+
+### `lib/core/analytics/analytics_event.dart`
+
+Sealed taxonomy. Add new events as `final class` entries here — never as raw strings at call sites. Names are snake_case (Firebase + most backends prefer it) and parameters are primitive-only (the intersection of what every backend can serialize without a custom mapper).
+
+```dart
+sealed class AnalyticsEvent {
+  const AnalyticsEvent({required this.name, this.params = const {}});
+  final String name;
+  final Map<String, Object?> params;
+}
+
+final class HomeViewed extends AnalyticsEvent {
+  const HomeViewed() : super(name: 'home_viewed');
+}
+
+final class FeedViewed extends AnalyticsEvent {
+  const FeedViewed() : super(name: 'feed_viewed');
+}
+
+final class ProfileViewed extends AnalyticsEvent {
+  const ProfileViewed() : super(name: 'profile_viewed');
+}
+
+final class ItemTapped extends AnalyticsEvent {
+  ItemTapped({required String itemId})
+      : super(name: 'item_tapped', params: {'item_id': itemId});
+}
+
+final class ScreenOpenedFromDeepLink extends AnalyticsEvent {
+  ScreenOpenedFromDeepLink({required String route})
+      : super(name: 'deep_link_open', params: {'route': route});
+}
+```
+
+### `lib/core/analytics/noop_analytics_tracker.dart`
+
+Always emitted. Null-Object implementation — used by default and when `INCLUDE_FIREBASE=false`. Lets every Cubit/Bloc inject `IAnalyticsTracker` unconditionally; no `if (analyticsEnabled)` branches at call sites.
+
+```dart
+import 'package:{{APP_NAME}}/core/analytics/analytics_event.dart';
+import 'package:{{APP_NAME}}/core/analytics/i_analytics_tracker.dart';
+
+class NoopAnalyticsTracker implements IAnalyticsTracker {
+  const NoopAnalyticsTracker();
+
+  @override
+  Future<void> track(AnalyticsEvent event) async {}
+
+  @override
+  Future<void> setUserProperty(String key, String? value) async {}
+
+  @override
+  Future<void> setCollectionEnabled(bool enabled) async {}
+}
+```
+
+> The `FirebaseAnalyticsTracker` impl lives in [`_firebase.md`](./_firebase.md). It uses the same interface and is bound in `container.dart` only under `INCLUDE_FIREBASE`. It is **defensive against an uninitialized FirebaseApp** — i.e. it silently no-ops until `flutterfire configure` produces a real `firebase_options.dart` and the user drops the per-flavor JSON/plist. That way the scaffold runs end-to-end immediately and starts emitting events automatically once Firebase is wired up.
 
 ### `lib/core/auth/auth_token_provider.dart`
 
@@ -651,11 +757,14 @@ class DioFactory {
 ```dart
 import 'package:dio/dio.dart';
 import 'package:get_it/get_it.dart';
+import 'package:{{APP_NAME}}/core/analytics/i_analytics_tracker.dart';
+import 'package:{{APP_NAME}}/core/analytics/noop_analytics_tracker.dart';
 import 'package:{{APP_NAME}}/core/config/app_config.dart';
 import 'package:{{APP_NAME}}/core/config/flavor.dart';
 import 'package:{{APP_NAME}}/core/logging/app_logger.dart';
 import 'package:{{APP_NAME}}/core/logging/i_logger.dart';
 import 'package:{{APP_NAME}}/core/network/dio_factory.dart';
+import 'package:{{APP_NAME}}/feature/home/di/home_module.dart';
 import 'package:{{APP_NAME}}/routing/app_router.dart';
 
 final GetIt sl = GetIt.instance;
@@ -664,6 +773,12 @@ Future<void> initializeDependencies({required Flavor flavor}) async {
   // Core
   sl.registerLazySingleton<ILogger>(AppLogger.new);
   sl.registerLazySingleton<AppConfig>(() => AppConfig.current);
+
+  // Analytics — defaults to Noop. Under INCLUDE_FIREBASE, replace this line
+  // with `FirebaseAnalyticsTracker.new` (see _firebase.md). The interface is
+  // always available, so Cubits/Blocs inject IAnalyticsTracker unconditionally.
+  sl.registerLazySingleton<IAnalyticsTracker>(NoopAnalyticsTracker.new);
+
   // sl.registerLazySingleton<AuthTokenProvider>(() => SecureStorageAuthTokenProvider(...));
   // sl.registerLazySingleton<Dio>(() => DioFactory(config: sl(), authTokenProvider: sl(), logger: sl()).create());
 
@@ -671,6 +786,7 @@ Future<void> initializeDependencies({required Flavor flavor}) async {
   sl.registerLazySingleton<AppRouter>(AppRouter.new);
 
   // Features — add each feature's register<Feature>Module(sl) here.
+  registerHomeModule(sl);
 }
 ```
 
@@ -717,9 +833,14 @@ QueryExecutor openConnection({required String passphrase}) => LazyDatabase(() as
 
 ### `lib/routing/app_router.dart`
 
+Top-level router uses `StatefulShellRoute.indexedStack` so the bottom-nav shell preserves each tab's nav stack independently — that's the modern go_router pattern for tab-based navigation. The shell page (`HomeShellPage`) renders the `NavigationBar` and the active tab's `navigator`. Each tab's content lives in its own typed `GoRouteData` so deep links land on the right tab.
+
 ```dart
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:{{APP_NAME}}/feature/home/presentation/pages/feed_page.dart';
+import 'package:{{APP_NAME}}/feature/home/presentation/pages/home_shell_page.dart';
+import 'package:{{APP_NAME}}/feature/home/presentation/pages/profile_page.dart';
 
 part 'app_router.g.dart';
 
@@ -727,27 +848,220 @@ class AppRouter {
   GoRouter get config => _router;
 
   final _router = GoRouter(
-    initialLocation: const SplashRoute().location,
+    initialLocation: '/feed',
     routes: $appRoutes,
     debugLogDiagnostics: true,
   );
 }
 
-@TypedGoRoute<SplashRoute>(path: '/')
-class SplashRoute extends GoRouteData {
-  const SplashRoute();
+@TypedStatefulShellRoute<HomeShellRoute>(
+  branches: <TypedStatefulShellBranch<StatefulShellBranchData>>[
+    TypedStatefulShellBranch<FeedBranch>(routes: <TypedRoute<RouteData>>[
+      TypedGoRoute<FeedRoute>(path: '/feed'),
+    ]),
+    TypedStatefulShellBranch<ProfileBranch>(routes: <TypedRoute<RouteData>>[
+      TypedGoRoute<ProfileRoute>(path: '/profile'),
+    ]),
+  ],
+)
+class HomeShellRoute extends StatefulShellRouteData {
+  const HomeShellRoute();
 
   @override
-  Widget build(BuildContext context, GoRouterState state) => const _SplashScreen();
+  Widget builder(BuildContext context, GoRouterState state, StatefulNavigationShell navigationShell) =>
+      HomeShellPage(navigationShell: navigationShell);
 }
 
-class _SplashScreen extends StatelessWidget {
-  const _SplashScreen();
+class FeedBranch extends StatefulShellBranchData {
+  const FeedBranch();
+}
+
+class ProfileBranch extends StatefulShellBranchData {
+  const ProfileBranch();
+}
+
+class FeedRoute extends GoRouteData {
+  const FeedRoute();
+  @override
+  Widget build(BuildContext context, GoRouterState state) => const FeedPage();
+}
+
+class ProfileRoute extends GoRouteData {
+  const ProfileRoute();
+  @override
+  Widget build(BuildContext context, GoRouterState state) => const ProfilePage();
+}
+```
+
+### `lib/feature/home/presentation/pages/home_shell_page.dart`
+
+The shell hosts the `NavigationBar`. `StatefulNavigationShell.goBranch(...)` switches the active tab while preserving each branch's navigation history.
+
+```dart
+import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+
+class HomeShellPage extends StatelessWidget {
+  const HomeShellPage({super.key, required this.navigationShell});
+
+  final StatefulNavigationShell navigationShell;
 
   @override
-  Widget build(BuildContext context) => const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
+  Widget build(BuildContext context) => Scaffold(
+        body: navigationShell,
+        bottomNavigationBar: NavigationBar(
+          selectedIndex: navigationShell.currentIndex,
+          onDestinationSelected: (i) => navigationShell.goBranch(
+            i,
+            initialLocation: i == navigationShell.currentIndex,
+          ),
+          destinations: const [
+            NavigationDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home), label: 'Feed'),
+            NavigationDestination(icon: Icon(Icons.person_outline), selectedIcon: Icon(Icons.person), label: 'Profile'),
+          ],
+        ),
       );
+}
+```
+
+### `lib/feature/home/presentation/cubit/feed_state.dart`
+
+```dart
+import 'package:freezed_annotation/freezed_annotation.dart';
+
+part 'feed_state.freezed.dart';
+
+@freezed
+class FeedState with _$FeedState {
+  const factory FeedState({
+    @Default(<String>[]) List<String> items,
+  }) = _FeedState;
+}
+```
+
+### `lib/feature/home/presentation/cubit/feed_cubit.dart`
+
+Demonstrates the canonical pattern at the same time as feedback #2 + #3: the Cubit depends only on `IAnalyticsTracker` (the cross-cutting domain interface), never on Firebase. Tracks the screen-viewed event from the constructor body so it fires once per Cubit instance.
+
+```dart
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:{{APP_NAME}}/core/analytics/analytics_event.dart';
+import 'package:{{APP_NAME}}/core/analytics/i_analytics_tracker.dart';
+import 'package:{{APP_NAME}}/feature/home/presentation/cubit/feed_state.dart';
+
+class FeedCubit extends Cubit<FeedState> {
+  FeedCubit({required IAnalyticsTracker analytics})
+      : _analytics = analytics,
+        super(const FeedState()) {
+    unawaited(_analytics.track(const FeedViewed()));
+  }
+
+  final IAnalyticsTracker _analytics;
+}
+```
+
+### `lib/feature/home/presentation/pages/feed_page.dart`
+
+Stateless page that injects the Cubit via `BlocProvider`. The Cubit is built off `sl<IAnalyticsTracker>()` so it picks up whichever impl is registered (Noop or Firebase).
+
+```dart
+import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:{{APP_NAME}}/core/analytics/i_analytics_tracker.dart';
+import 'package:{{APP_NAME}}/core/di/container.dart';
+import 'package:{{APP_NAME}}/feature/home/presentation/cubit/feed_cubit.dart';
+import 'package:{{APP_NAME}}/feature/home/presentation/cubit/feed_state.dart';
+
+class FeedPage extends StatelessWidget {
+  const FeedPage({super.key});
+
+  @override
+  Widget build(BuildContext context) => BlocProvider(
+        create: (_) => FeedCubit(analytics: sl<IAnalyticsTracker>()),
+        child: Scaffold(
+          appBar: AppBar(title: const Text('Feed')),
+          body: BlocBuilder<FeedCubit, FeedState>(
+            builder: (context, state) => Center(
+              child: Text('Feed (${state.items.length} items)'),
+            ),
+          ),
+        ),
+      );
+}
+```
+
+### `lib/feature/home/presentation/cubit/profile_state.dart`
+
+```dart
+import 'package:freezed_annotation/freezed_annotation.dart';
+
+part 'profile_state.freezed.dart';
+
+@freezed
+class ProfileState with _$ProfileState {
+  const factory ProfileState({
+    @Default('guest') String userName,
+  }) = _ProfileState;
+}
+```
+
+### `lib/feature/home/presentation/cubit/profile_cubit.dart`
+
+```dart
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:{{APP_NAME}}/core/analytics/analytics_event.dart';
+import 'package:{{APP_NAME}}/core/analytics/i_analytics_tracker.dart';
+import 'package:{{APP_NAME}}/feature/home/presentation/cubit/profile_state.dart';
+
+class ProfileCubit extends Cubit<ProfileState> {
+  ProfileCubit({required IAnalyticsTracker analytics})
+      : _analytics = analytics,
+        super(const ProfileState()) {
+    unawaited(_analytics.track(const ProfileViewed()));
+  }
+
+  final IAnalyticsTracker _analytics;
+}
+```
+
+### `lib/feature/home/presentation/pages/profile_page.dart`
+
+```dart
+import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:{{APP_NAME}}/core/analytics/i_analytics_tracker.dart';
+import 'package:{{APP_NAME}}/core/di/container.dart';
+import 'package:{{APP_NAME}}/feature/home/presentation/cubit/profile_cubit.dart';
+import 'package:{{APP_NAME}}/feature/home/presentation/cubit/profile_state.dart';
+
+class ProfilePage extends StatelessWidget {
+  const ProfilePage({super.key});
+
+  @override
+  Widget build(BuildContext context) => BlocProvider(
+        create: (_) => ProfileCubit(analytics: sl<IAnalyticsTracker>()),
+        child: Scaffold(
+          appBar: AppBar(title: const Text('Profile')),
+          body: BlocBuilder<ProfileCubit, ProfileState>(
+            builder: (context, state) => Center(
+              child: Text('Profile (${state.userName})'),
+            ),
+          ),
+        ),
+      );
+}
+```
+
+### `lib/feature/home/di/home_module.dart`
+
+Per-feature registration module — the convention used everywhere in this project. The home tabs themselves are stateless until you flesh them out, so the module is currently empty; it exists so adding the next dependency (a repository, a use case) doesn't churn `container.dart`.
+
+```dart
+import 'package:get_it/get_it.dart';
+
+void registerHomeModule(GetIt sl) {
+  // Add Home-feature factories here as real screens land:
+  //   sl.registerFactory<HomeRepository>(() => HomeRepositoryImpl(...));
 }
 ```
 
@@ -855,7 +1169,51 @@ void main() {
 }
 ```
 
-(Real tests go under `test/core/`, `test/feature/<feature>/`, `test/shared/`.)
+### `test/feature/home/feed_cubit_test.dart`
+
+Anchors the convention: every Cubit/Bloc that depends on `IAnalyticsTracker` should have a sibling test that asserts the right event fires. `mocktail` (not `mockito`) is the project default; the fake must `registerFallbackValue` for any `AnalyticsEvent` argument used with `any()`.
+
+```dart
+import 'package:bloc_test/bloc_test.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:mocktail/mocktail.dart';
+import 'package:{{APP_NAME}}/core/analytics/analytics_event.dart';
+import 'package:{{APP_NAME}}/core/analytics/i_analytics_tracker.dart';
+import 'package:{{APP_NAME}}/feature/home/presentation/cubit/feed_cubit.dart';
+import 'package:{{APP_NAME}}/feature/home/presentation/cubit/feed_state.dart';
+
+class _MockAnalytics extends Mock implements IAnalyticsTracker {}
+
+class _FakeAnalyticsEvent extends Fake implements AnalyticsEvent {}
+
+void main() {
+  setUpAll(() {
+    registerFallbackValue(_FakeAnalyticsEvent());
+  });
+
+  group('FeedCubit', () {
+    late _MockAnalytics analytics;
+
+    setUp(() {
+      analytics = _MockAnalytics();
+      when(() => analytics.track(any())).thenAnswer((_) async {});
+    });
+
+    test('starts with empty FeedState', () {
+      final cubit = FeedCubit(analytics: analytics);
+      expect(cubit.state, const FeedState());
+      cubit.close();
+    });
+
+    test('tracks FeedViewed on construction', () {
+      FeedCubit(analytics: analytics).close();
+      verify(() => analytics.track(any(that: isA<FeedViewed>()))).called(1);
+    });
+  });
+}
+```
+
+(Other tests go under `test/core/`, `test/feature/<feature>/`, `test/shared/`.)
 
 ## Step 7 — Flavors (Android + iOS)
 
@@ -909,12 +1267,15 @@ flutter test
 ## Post-init checklist (show the user)
 
 - [ ] `flutter pub get` succeeded.
-- [ ] `dart run build_runner build --delete-conflicting-outputs` generated `app_router.g.dart` (and `app_database.g.dart` if INCLUDE_DRIFT).
+- [ ] `dart run build_runner build --delete-conflicting-outputs` generated `app_router.g.dart`, `feed_state.freezed.dart`, `profile_state.freezed.dart` (and `app_database.g.dart` if INCLUDE_DRIFT).
 - [ ] `dart analyze` is clean.
-- [ ] `flutter run --flavor dev --target lib/main_dev.dart` boots to the splash.
+- [ ] `flutter run --flavor dev --target lib/main_dev.dart` boots to the Home shell with Feed + Profile bottom-nav tabs.
+- [ ] `flutter test` passes (`smoke_test`, `feed_cubit_test`).
 - [ ] Android flavors set up in `android/app/build.gradle.kts`.
 - [ ] iOS schemes + configurations set up in Xcode.
-- [ ] (If INCLUDE_FIREBASE) `flutterfire configure` run for both flavors.
+- [ ] (If INCLUDE_FIREBASE) `flutterfire configure` run for both flavors. The `FirebaseAnalyticsTracker` no-ops at runtime if Firebase isn't initialized yet, so the app launches regardless; events start flowing once configure has run + the JSON/plist drops are in place.
+- [ ] Replace the Feed and Profile placeholders with your first real features (use `/new-feature <name>` or follow the conventions in `clean-architecture-flutter/SKILL.md`).
+- [ ] Add new analytics events as sealed entries in `lib/core/analytics/analytics_event.dart` — never magic strings.
 - [ ] Git initialized: `git init && git add . && git commit -m 'initial scaffold'`.
 
 ## Hard rules for this skill
