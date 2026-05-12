@@ -25,29 +25,47 @@ flutter/
 ├── README.md                          # this file
 └── .claude/
     ├── settings.json                  # flutter/dart/xcode/gradle/git permissions
+    ├── hooks.json                     # PostToolUse + PreToolUse hook wiring
+    ├── hooks/                         # Versioned hook scripts
+    │   ├── format.sh                  # dart format on edited files
+    │   └── pre-commit.sh              # dart analyze --fatal-infos before `git commit`
     ├── agents/
-    │   ├── flutter-architect.md       # architectural decisions
-    │   ├── flutter-ui-engineer.md     # screens + widgets + typed routes
-    │   ├── flutter-reviewer.md         # idiom + layer + bloc + async review
-    │   ├── flutter-tester.md           # unit / bloc / widget / golden tests
-    │   └── flutter-build-expert.md     # pubspec, build_runner, lints, flavors
+    │   ├── flutter-architect.md          # architectural decisions
+    │   ├── flutter-ui-engineer.md        # screens + widgets + typed routes
+    │   ├── flutter-reviewer.md           # idiom + layer + bloc + async review
+    │   ├── flutter-tester.md             # unit / bloc / widget / golden tests
+    │   ├── flutter-build-expert.md       # pubspec, build_runner, lints, flavors
+    │   ├── flutter-security-reviewer.md  # auth, secrets, dio, secure storage, ATS
+    │   ├── flutter-a11y-reviewer.md      # Semantics, contrast, scaling, focus order
+    │   ├── flutter-performance-analyst.md # frame timings, jank, build-cost analysis
+    │   └── flutter-release-engineer.md   # versioning, signing, store metadata, fastlane
     ├── skills/
     │   ├── flutter-architecture/SKILL.md
-    │   ├── dart-style/SKILL.md
-    │   ├── widgets-and-screens/SKILL.md
+    │   ├── flutter-app-skeleton/SKILL.md
+    │   ├── flutter-accessibility/SKILL.md
+    │   ├── flutter-performance/SKILL.md
+    │   ├── flutter-security/SKILL.md
+    │   ├── flutter-testing/SKILL.md
     │   ├── bloc-state/SKILL.md
-    │   ├── get-it-di/SKILL.md
+    │   ├── dart-style/SKILL.md
     │   ├── dio-networking/SKILL.md
     │   ├── drift-persistence/SKILL.md
-    │   ├── flutter-testing/SKILL.md
-    │   └── flutter-app-skeleton/SKILL.md
+    │   ├── firebase-services/SKILL.md
+    │   ├── freezed-patterns/SKILL.md
+    │   ├── get-it-di/SKILL.md
+    │   ├── localization-arb/SKILL.md
+    │   ├── openapi-generation/SKILL.md
+    │   └── widgets-and-screens/SKILL.md
     └── commands/
         ├── init-flutter-app.md
         ├── new-feature.md
         ├── add-screen.md
         ├── add-bloc.md
         ├── add-usecase.md
-        └── review-flutter.md
+        ├── add-migration.md
+        ├── review-flutter.md
+        ├── upgrade-deps.md
+        └── fix-tests.md
 ```
 
 ## Conventions at a glance
@@ -64,12 +82,29 @@ flutter/
 
 ## Slash commands
 
-- `/init-flutter-app [name]` — scaffold a brand-new Flutter app from scratch (folders, `pubspec.yaml`, analysis options, core/, routing, shared/, splash route, tests). Asks about flavors, drift, Firebase, notifications, and workmanager up front. Backed by the `flutter-app-skeleton` skill.
+- `/init-flutter-app [name]` — scaffold a brand-new Flutter app from scratch (folders, `pubspec.yaml`, analysis options, core/, routing, shared/, Home + Feed/Profile bottom-nav, tests). Asks about flavors, drift, Firebase, notifications, and workmanager up front. Backed by the `flutter-app-skeleton` skill.
 - `/new-feature <name>` — scaffold a full feature (data + domain + presentation + module + route).
 - `/add-screen <feature>/<Name>` — add a page + view + typed route.
 - `/add-bloc <feature>/<Name>` — add a bloc (or cubit) with freezed states/events.
 - `/add-usecase <feature>/<Name>` — add a domain use case (only when it earns its keep).
+- `/add-migration <name>` — add a drift schema migration.
+- `/upgrade-deps` — refresh `pubspec.yaml` against pub.dev and run `dart pub upgrade`.
+- `/fix-tests` — investigate + fix failing unit, bloc, widget, or golden tests on the current branch.
 - `/review-flutter` — delegate a review to the `flutter-reviewer` subagent.
+
+## Specialist agents — quick reference
+
+| Agent | Use for |
+|---|---|
+| `flutter-architect` | Layer / module boundaries, where code belongs, trade-offs |
+| `flutter-ui-engineer` | Building or refactoring screens, widgets, typed routes |
+| `flutter-reviewer` | Code review focused on Dart idioms, layer rules, bloc, async |
+| `flutter-tester` | Writing unit, bloc, widget, and golden tests |
+| `flutter-build-expert` | `pubspec.yaml`, `build_runner`, `analysis_options.yaml`, flavors |
+| `flutter-security-reviewer` | Auth, secrets, `dio`/HTTP, `flutter_secure_storage`, ATS, deep links |
+| `flutter-a11y-reviewer` | `Semantics`, contrast, text scaling, focus order, screen-reader labels |
+| `flutter-performance-analyst` | Frame timings, jank, rebuild cost, image / list performance |
+| `flutter-release-engineer` | Versioning, signing, store metadata, fastlane / `gradle publish` |
 
 ## Build and test
 

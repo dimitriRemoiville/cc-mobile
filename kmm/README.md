@@ -21,24 +21,41 @@ kmm/
 ├── README.md                      # this file
 └── .claude/
     ├── settings.json              # Gradle/Xcode/git permissions
+    ├── hooks.json                 # PostToolUse + PreToolUse hook wiring
+    ├── hooks/                     # Versioned hook scripts
+    │   ├── format.sh              # ktlint (Kotlin) + swiftformat (Swift glue) on edited files
+    │   └── pre-commit.sh          # :shared:allTests + :androidApp:lintDebug before `git commit`
     ├── agents/                    # subagents
     │   ├── kmm-architect.md
     │   ├── kmm-engineer.md
     │   ├── kmm-reviewer.md
     │   ├── kmm-tester.md
-    │   └── kmm-build-expert.md
+    │   ├── kmm-build-expert.md
+    │   ├── kmm-security-reviewer.md
+    │   ├── kmm-a11y-reviewer.md
+    │   ├── kmm-performance-analyst.md
+    │   └── kmm-release-engineer.md
     ├── skills/                    # on-demand playbooks
     │   ├── kmm-architecture/SKILL.md
-    │   ├── shared-viewmodels/SKILL.md
-    │   ├── ktor-multiplatform/SKILL.md
-    │   ├── koin-di/SKILL.md
+    │   ├── kmm-app-skeleton/SKILL.md
+    │   ├── kmm-ios-interop/SKILL.md
     │   ├── kmm-testing/SKILL.md
-    │   └── kmm-ios-interop/SKILL.md
+    │   ├── shared-viewmodels/SKILL.md
+    │   ├── koin-di/SKILL.md
+    │   ├── ktor-multiplatform/SKILL.md
+    │   ├── kotlinx-serialization/SKILL.md
+    │   ├── multiplatform-settings/SKILL.md
+    │   ├── sqldelight-persistence/SKILL.md
+    │   └── xcframework-distribution/SKILL.md
     └── commands/                  # slash commands
+        ├── init-kmm-app.md
         ├── new-feature.md
         ├── add-usecase.md
         ├── add-viewmodel.md
-        └── review-kmm.md
+        ├── add-migration.md
+        ├── review-kmm.md
+        ├── upgrade-deps.md
+        └── fix-tests.md
 ```
 
 ## Conventions at a glance
@@ -56,10 +73,28 @@ The public `commonMain` surface is also the Swift surface. Follow `.claude/skill
 
 ## Slash commands
 
+- `/init-kmm-app [package_id]` — scaffold a brand-new KMM project from scratch (`:shared` with commonMain/androidMain/iosMain, `:androidApp` Compose, `iosApp/` SwiftUI, Ktor Client, Koin, optional SQLDelight). Resolves all Maven + GitHub-Releases versions online before writing files.
 - `/new-feature <name>` — scaffold a feature across data + domain + presentation.
 - `/add-usecase <feature>/<Name>` — add a use case with a common test.
 - `/add-viewmodel <feature>/<Name>` — add a shared ViewModel with UiState/UiEvent/Action.
+- `/add-migration <name>` — add a SQLDelight schema migration.
+- `/upgrade-deps` — refresh `libs.versions.toml` against published Maven metadata.
+- `/fix-tests` — investigate + fix failing common or platform tests on the current branch.
 - `/review-kmm` — delegate a convention-focused review to the `kmm-reviewer` subagent.
+
+## Specialist agents — quick reference
+
+| Agent | Use for |
+|---|---|
+| `kmm-architect` | Module boundaries, source-set decisions, `expect`/`actual` vs. interface-injection trade-offs |
+| `kmm-engineer` | Building repositories, use cases, ViewModels in `commonMain` |
+| `kmm-reviewer` | Code review focused on KMP idioms and iOS interop surface |
+| `kmm-tester` | `kotlin.test` + `kotlinx-coroutines-test` suites for common code |
+| `kmm-build-expert` | KMP Gradle plugin, source-set wiring, XCFramework / CocoaPods / SPM distribution |
+| `kmm-security-reviewer` | Token storage on each platform, network calls, KMP-side keystore/keychain glue |
+| `kmm-a11y-reviewer` | Both platforms' UI for shared-layer pitfalls (locale-insensitive formatting, color-only enums) |
+| `kmm-performance-analyst` | Shared cold-start cost, Ktor + serialization overhead, framework-link size |
+| `kmm-release-engineer` | Version bumps, XCFramework publishing, dual-platform release coordination |
 
 ## Build and test
 

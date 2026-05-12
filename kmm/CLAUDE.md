@@ -109,19 +109,27 @@ Dependency direction inside `shared/`: `presentation → domain ← data`. Domai
 
 Use the `Task` tool with these subagents for focused work (see `.claude/agents/`):
 
-- `kmm-architect` — module boundaries, source set decisions, `expect`/`actual` vs. interface-injection trade-offs.
+- `kmm-architect` — module boundaries, source-set decisions, `expect`/`actual` vs. interface-injection trade-offs.
 - `kmm-engineer` — building repositories, use cases, ViewModels in `commonMain`.
 - `kmm-reviewer` — code review focused on KMP idioms and iOS interop surface.
 - `kmm-tester` — `kotlin.test` + `kotlinx-coroutines-test` suites for common code.
 - `kmm-build-expert` — KMP Gradle plugin, source-set wiring, XCFramework / CocoaPods / SPM distribution.
+- `kmm-security-reviewer` — token storage on each platform, network calls, KMP-side keystore/keychain glue.
+- `kmm-a11y-reviewer` — both platforms' UI for shared-layer pitfalls (locale-insensitive formatting, color-only enums).
+- `kmm-performance-analyst` — shared cold-start cost, Ktor + serialization overhead, framework-link size.
+- `kmm-release-engineer` — version bumps, XCFramework publishing, dual-platform release coordination.
 
 ## Useful slash commands
 
 See `.claude/commands/`:
 
+- `/init-kmm-app` — scaffold a brand-new KMM project from scratch (`:shared` with commonMain/androidMain/iosMain, `:androidApp` Compose, `iosApp/` SwiftUI, Ktor Client, Koin, optional SQLDelight). Resolves all Maven + GitHub-Releases versions online before writing files.
 - `/new-feature` — scaffold a full feature in `shared/` (data + domain + presentation ViewModel).
 - `/add-usecase` — add a use case + test in `commonMain` / `commonTest`.
 - `/add-viewmodel` — add a shared ViewModel with `StateFlow<UiState>` + UiEvent channel.
+- `/add-migration` — add a SQLDelight schema migration.
+- `/upgrade-deps` — refresh `libs.versions.toml` against published Maven metadata.
+- `/fix-tests` — investigate + fix failing common or platform tests on the current branch.
 - `/review-kmm` — delegate a review pass to `kmm-reviewer`.
 
 ## Relationship to sibling setups

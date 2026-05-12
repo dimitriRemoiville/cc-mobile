@@ -98,12 +98,20 @@ Use the `Task` tool with these subagents for focused work (see `.claude/agents/`
 - `ios-reviewer` — code review focused on Swift/iOS idioms and concurrency.
 - `ios-tester` — writing unit, async, and UI tests.
 - `ios-build-expert` — Swift Package Manager, build settings, Xcode project quirks.
+- `ios-security-reviewer` — auth, Keychain, ATS, URLSession, WebView, Info.plist permission strings.
+- `ios-a11y-reviewer` — VoiceOver labels/traits, Dynamic Type, contrast, hit-target sizing.
+- `ios-performance-analyst` — cold start, scroll jank, memory growth, Instruments / signpost analysis.
+- `ios-release-engineer` — version bumps, signing, App Store Connect metadata, fastlane / `xcodebuild archive`.
 
 ## Useful slash commands
 
 See `.claude/commands/`:
 
+- `/init-ios-app` — scaffold a brand-new iOS app from scratch (Swift 6, SwiftUI, SPM, composition-root DI, Keychain, NavigationStack with typed destinations, Swift Testing). Verifies the toolchain floor and resolves any third-party SPM tags online.
 - `/new-feature` — scaffold a full feature (Data + Domain + Presentation).
 - `/add-view` — add a SwiftUI view + ViewModel + ViewState.
 - `/add-usecase` — add a use case with a test.
+- `/add-migration` — add a SwiftData schema migration.
+- `/upgrade-deps` — refresh SPM tags against the GitHub Releases API.
+- `/fix-tests` — investigate + fix failing tests on the current branch.
 - `/review-ios` — run a review pass with `ios-reviewer`.

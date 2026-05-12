@@ -95,12 +95,20 @@ Use the `Task` tool with these subagents for focused work (see `.claude/agents/`
 - `android-reviewer` — code review focused on Kotlin/Android idioms.
 - `android-tester` — writing unit, Flow, and Compose UI tests.
 - `android-build-expert` — Gradle, version catalog, build performance, KSP/kapt issues.
+- `android-security-reviewer` — auth, secrets, network calls crossing trust boundaries, manifest changes.
+- `android-a11y-reviewer` — Compose semantics, content descriptions, tap targets, TalkBack.
+- `android-performance-analyst` — jank, cold-start regressions, Macrobenchmark / Baseline Profile work.
+- `android-release-engineer` — version bumps, signing config, Play Console metadata, fastlane / `gradle publish`.
 
 ## Useful slash commands
 
 See `.claude/commands/`:
 
+- `/init-android-app` — scaffold a brand-new Android app from scratch (AGP 9, Hilt, Compose, Home + Feed/Profile bottom-nav, analytics layer). Resolves every dependency version online before writing files.
 - `/new-feature` — scaffold a full feature (data + domain + presentation).
 - `/add-screen` — add a Compose screen + ViewModel + UiState.
 - `/add-usecase` — add a use case with a test.
+- `/add-migration` — add a Room schema migration.
+- `/upgrade-deps` — refresh `libs.versions.toml` against published Maven metadata.
+- `/fix-tests` — investigate + fix failing unit tests on the current branch.
 - `/review-android` — run a review pass with `android-reviewer`.

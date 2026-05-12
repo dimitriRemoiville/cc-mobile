@@ -48,6 +48,8 @@ All notable changes to this repo's Claude Code configurations are logged here. D
 - Flutter `setState` hard-no softened to scope to business/navigation state only.
 - `flutter-app-skeleton` split into a core `SKILL.md` plus optional sibling files (`_drift.md`, `_firebase.md`, `_notifications.md`, `_workmanager.md`) loaded conditionally.
 - `/init-flutter-app` Phase 0 collapsed from 8 discrete questions to one "confirm or override the defaults" round-trip.
+- Per-stack `README.md` files refreshed: `.claude/` ASCII trees now list every shipped agent, skill, and command (previously they showed an outdated 5-of-9 agents / 5-of-13+ skills / 4-of-7+ commands subset), include the new `hooks/` directory, and the slash-command narrative covers the full set (`/init-*-app`, `/upgrade-deps`, `/add-migration`, `/fix-tests`). KMM's and Flutter's READMEs gained a "Specialist agents — quick reference" table to match Android/iOS.
+- Per-stack `CLAUDE.md` (Android, iOS, KMM) "Specialist agents" sections now list all nine agents per stack (architect, ui/engineer, reviewer, tester, build-expert, security-reviewer, a11y-reviewer, performance-analyst, release-engineer); "Useful slash commands" sections now cover every shipped command. Flutter's `CLAUDE.md` is convention-only by design and stays unchanged.
 
 ### Fixed
 
