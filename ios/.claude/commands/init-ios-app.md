@@ -1,7 +1,7 @@
 ---
 description: Scaffold a fresh iOS app with this project's conventions — Swift 6, SwiftUI, Clean Architecture, Swift Concurrency, SPM-based modules, composition-root DI, URLSession, Keychain, NavigationStack with typed destinations, Swift Testing.
 argument-hint: "[bundle_id]"
-allowed-tools: Read, Write, Edit, Grep, Glob, Bash, Task, AskUserQuestion
+allowed-tools: Read, Write, Edit, Grep, Glob, Bash, Task, AskUserQuestion, WebFetch
 ---
 
 # /init-ios-app
@@ -30,6 +30,43 @@ Placeholders used: `{{APP_NAME}}`, `{{BUNDLE_ID}}`, `{{APP_DISPLAY_NAME}}`, `{{O
 Flags: `INCLUDE_SWIFTDATA`, `INCLUDE_FIREBASE`.
 
 Do not improvise file contents. Substitute placeholders.
+
+## Phase 1.5 — Resolve toolchain + SPM versions online
+
+iOS scaffolding's "version surface" splits in three: (a) the Swift/Xcode toolchain on the user's machine, (b) Apple frameworks (no external version — they're a function of the deployment target), and (c) any third-party SPM packages we add. The Apple side is verified by command, not by URL fetch; the third-party side resolves through the GitHub Releases API because SPM doesn't have a Maven-style metadata XML.
+
+**1. Toolchain floor (mandatory).** Run these locally and stop on a mismatch:
+
+| Check | Command | Floor |
+|---|---|---|
+| Swift compiler | `swift --version` (parse `Apple Swift version <X.Y>`) | `>= 6.0` (the skeleton uses Swift 6 strict concurrency) |
+| Xcode | `xcodebuild -version` (parse `Xcode <X.Y>`) | `>= 16.0` (Xcode 16 ships Swift 6) |
+| `xcrun --show-sdk-version --sdk iphoneos` | `>= <user-picked deployment target>` | matches Phase 0 Q3 |
+
+If Swift < 6 or Xcode < 16, stop and ask the user to upgrade — do not lower the floor or change the skeleton's idioms. Do not auto-suggest `xcode-select` switches — the user might have a beta intentionally selected.
+
+**2. Deployment-target sanity.** If Phase 0 Q3 picked iOS < 18, surface that the skeleton uses iOS 18 features (`@Observable`, NavigationStack typed destinations, NavigationPath value-type push) and either (a) stop and ask the user to confirm a downgrade with eyes open, or (b) proceed and substitute the iOS 17-compatible variants from the skill's "Compatibility traps" callout. Default behaviour: stop.
+
+**3. Third-party SPM packages (only when flags require them).** SPM's manifest cares about real released tags. For each package the scaffold adds, resolve the latest stable tag via GitHub's Releases API and pin it with the `from:` form (`.package(url: "...", from: "<tag>")`).
+
+| Flag | Package | URL | API to fetch |
+|---|---|---|---|
+| `INCLUDE_FIREBASE` | firebase-ios-sdk | `https://github.com/firebase/firebase-ios-sdk` | `https://api.github.com/repos/firebase/firebase-ios-sdk/releases/latest` (read `tag_name`) |
+| (always) | swift-collections | `https://github.com/apple/swift-collections` | `https://api.github.com/repos/apple/swift-collections/releases/latest` — only if the skeleton currently depends on it; skip otherwise |
+
+For each fetch: filter out tags suffixed `-alpha`, `-beta`, `-rc`, `-pre`. Use the highest remaining semver. If the GitHub API rate-limits (HTTP 403 with `X-RateLimit-Remaining: 0`), fall back to `git ls-remote --tags <url>` (run via Bash) and pick the highest semver tag manually. Stop and surface the failure if both routes fail — do not invent a tag.
+
+**4. Optional tooling.** If `xcodegen` is missing, stop and ask the user to either install it (`brew install xcodegen`) or accept the manual-Xcode-project path emitted in Phase 2 step 5. Do not silently degrade to manual without asking.
+
+**Resolution output.** Before Phase 2, print the resolved toolchain row and the resolved SPM tag(s) so the user can sanity-check them. Example:
+
+```
+Resolved versions:
+  swift          = 6.0.2     (local)
+  xcode          = 16.2      (local)
+  ios deployment = 18.0      (user)
+  firebase-ios   = 11.6.0    (github releases, INCLUDE_FIREBASE=on)
+```
 
 ## Phase 2 — Execute the scaffold
 
@@ -85,4 +122,6 @@ Build it:
 
 - Target dir already contains `Package.swift` or `*.xcodeproj` → ask whether to abort or scaffold into a subdirectory.
 - `swift` / `xcodebuild` not on PATH → stop.
-- User picks Firebase without project set up → proceed but flag manual plist drop.
+- Local Swift < 6.0 or Xcode < 16 → stop (Phase 1.5). Don't lower the skeleton's floor.
+- Phase 1.5 GitHub release fetch fails AND `git ls-remote` fallback fails → stop. Don't invent SPM tags from training data.
+- User picks Firebase without project set up → proceed but flag manual plist drop. The defensive `FirebaseAnalyticsTracker` no-ops at runtime until `FirebaseApp` is configured, so the scaffold still launches.
