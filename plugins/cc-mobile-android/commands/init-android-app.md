@@ -71,6 +71,7 @@ For each ref, `WebFetch` the URL below and pick the newest version that is **not
 | `google-services` | `https://dl.google.com/android/maven2/com/google/gms/google-services/maven-metadata.xml` |
 | `firebase-crashlytics-plugin` | `https://dl.google.com/android/maven2/com/google/firebase/firebase-crashlytics-gradle/maven-metadata.xml` |
 | `junit` | `https://repo1.maven.org/maven2/junit/junit/maven-metadata.xml` |
+| `androidx-test-ext-junit` | `https://dl.google.com/android/maven2/androidx/test/ext/junit/maven-metadata.xml` (used by `androidTest` to wire the JUnit4 runner; the Compose `ui-test-junit4` artifact rides the Compose BOM and doesn't need its own resolution.) |
 | `mockk` | `https://repo1.maven.org/maven2/io/mockk/mockk/maven-metadata.xml` |
 | `turbine` | `https://repo1.maven.org/maven2/app/cash/turbine/turbine/maven-metadata.xml` |
 | `compileSdk` / `targetSdk` | Use the latest stable Android API level (currently the highest API the user's installed `compileSdk` allows; if unsure, run `ls $ANDROID_HOME/platforms` and pick the highest `android-N`). Hard-code that integer in `app/build.gradle.kts`. |

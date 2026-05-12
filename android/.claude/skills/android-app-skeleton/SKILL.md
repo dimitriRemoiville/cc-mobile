@@ -62,11 +62,11 @@ Why feature-first inside a single module?
 3. Write `app/build.gradle.kts` (single module — it carries all runtime deps).
 4. Write `AndroidManifest.xml`, `strings.xml` (with tab labels), themes, launcher icons.
 5. Write `core/domain/` — `Outcome`, `DomainError`, **`analytics/AnalyticsTracker` interface + `AnalyticsEvent` sealed taxonomy** (always emitted; the analytics interface is part of the domain so use cases / VMs depend on the abstraction even when Firebase is absent).
-6. Write `core/data/` — Retrofit/OkHttp factory + sample API + `RemoteDataSource`, **`Outcomes.kt` (canonical `Result<T>.toOutcome(...)` adapter + `toDomainError(...)` mapper)**, Hilt `@Module` for networking, **`analytics/` module wiring `AnalyticsTracker` to `NoopAnalyticsTracker` (always) or `FirebaseAnalyticsTracker` (`INCLUDE_FIREBASE`)**. Add `core/data/persistence/` + `core/data/datastore/` behind their flags.
+6. Write `core/data/` — sample API + `RemoteDataSource`, **`Outcomes.kt` (canonical `Result<T>.toOutcome(...)` adapter + `toDomainError(...)` mapper)**, **`network/di/NetworkModule.kt` (Hilt providers for `OkHttpClient`, `Json`, `Retrofit`, `SampleApi` — DEBUG-gated logging; one source of truth for the HTTP stack so Coil reuses the same client)**, **`analytics/` module wiring `AnalyticsTracker` to `NoopAnalyticsTracker` (always) or `FirebaseAnalyticsTracker` (`INCLUDE_FIREBASE`)**. Add `core/data/persistence/` + `core/data/datastore/` (with their own DI modules) behind their flags.
 7. Write `core/ui/theme/AppTheme.kt`, `core/ui/common/TrackScreen.kt`, and `core/navigation/AppNavGraph.kt` (top-level nav with `Home` as start destination).
-8. Write the features — `{{APP_CLASS}}` Application, `MainActivity`, **`home/ui/HomeScreen` with bottom NavigationBar + nested NavHost (Feed + Profile tabs)**, `feed/ui/{FeedScreen,FeedViewModel}.kt`, `profile/ui/{ProfileScreen,ProfileViewModel}.kt`.
-9. Write `:app` tests — `core/domain/OutcomeMapTest.kt` and `feed/ui/FeedViewModelTest.kt` that mocks `AnalyticsTracker` (demonstrates wiring + DI testability in one beat).
-10. **Compile + assemble + run unit tests.** Run `:app:compileDebugKotlin`, then **`:app:assembleDevDebug`** (the full assemble — this is the gate that catches missing Gradle plugins, unresolved deps, manifest merger errors), then `:app:testDebugUnitTest`. `compileDebugKotlin` alone is not sufficient.
+8. Write the features — `{{APP_CLASS}}` Application (Hilt + `SingletonImageLoader.Factory` for Coil), `MainActivity`, **`home/ui/{HomeScreen,HomeViewModel}.kt` (bottom NavigationBar + nested NavHost; `TrackScreen(HomeViewed)` at the top demonstrates the helper)**, `feed/ui/{FeedScreen,FeedViewModel}.kt`, `profile/ui/{ProfileScreen,ProfileViewModel}.kt`.
+9. Write `:app` tests — `core/domain/OutcomeMapTest.kt`, `feed/ui/FeedViewModelTest.kt` (mocks `AnalyticsTracker`), plus the Compose UI tests `feed/ui/FeedScreenTest.kt` and `profile/ui/ProfileScreenTest.kt` under `app/src/androidTest/`. The androidTest pair anchors the Route + Screen split: each test drives the **stateless** `<Feature>Screen` directly, not the Route — no Hilt setup needed.
+10. **Compile + assemble + run unit tests.** Run `:app:compileDebugKotlin`, then **`:app:assembleDevDebug`** (the full assemble — this is the gate that catches missing Gradle plugins, unresolved deps, manifest merger errors), then `:app:testDebugUnitTest`. `compileDebugKotlin` alone is not sufficient. The Compose UI tests run via `:app:connectedDebugAndroidTest` when an emulator/device is attached; if none is available, leave them ready-to-run rather than blocking the scaffold.
 11. Emit manual setup notes (signing, flavor stubs, Firebase files).
 
 ---
@@ -170,6 +170,7 @@ firebase-bom = "<latest-stable>"
 google-services = "<latest-stable>"
 firebase-crashlytics-plugin = "<latest-stable>"
 junit = "<latest-stable>"
+androidx-test-ext-junit = "<latest-stable>"
 mockk = "<latest-stable>"
 turbine = "<latest-stable>"
 coroutines-test = "<latest-stable>"
@@ -203,7 +204,9 @@ retrofit-kotlinx-serialization = { module = "com.squareup.retrofit2:converter-ko
 okhttp = { module = "com.squareup.okhttp3:okhttp", version.ref = "okhttp" }
 okhttp-logging = { module = "com.squareup.okhttp3:logging-interceptor", version.ref = "okhttp" }
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinx-serialization" }
-kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
+# `kotlinx-coroutines-android` transitively brings `core`. Re-add an explicit
+# `kotlinx-coroutines-core` entry only when extracting a `:core:domain` JVM module
+# that needs it without the Android variant.
 kotlinx-coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "coroutines" }
 
 # Image loading — Coil 3 with Compose integration. The `coil-network-okhttp` artifact
@@ -227,9 +230,16 @@ firebase-crashlytics = { module = "com.google.firebase:firebase-crashlytics" }
 firebase-analytics = { module = "com.google.firebase:firebase-analytics" }
 
 junit = { module = "junit:junit", version.ref = "junit" }
+androidx-test-ext-junit = { module = "androidx.test.ext:junit", version.ref = "androidx-test-ext-junit" }
 mockk = { module = "io.mockk:mockk", version.ref = "mockk" }
 turbine = { module = "app.cash.turbine:turbine", version.ref = "turbine" }
 kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "coroutines-test" }
+
+# Compose UI test artifacts come from the Compose BOM (no version.ref).
+compose-ui-test-junit4 = { module = "androidx.compose.ui:ui-test-junit4" }
+# `ui-test-manifest` lives in debugImplementation so the test app has the
+# ComponentActivity manifest entry that createComposeRule()/createAndroidComposeRule() need.
+compose-ui-test-manifest = { module = "androidx.compose.ui:ui-test-manifest" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
@@ -326,7 +336,7 @@ android {
             applicationIdSuffix = ".dev"
             versionNameSuffix = "-dev"
             // Retrofit requires a trailing slash. The runtime client reads BuildConfig.API_BASE_URL
-            // (see data/network/ApiClientFactory.kt) — keep this the single source of truth.
+            // (see core/data/network/di/NetworkModule.kt) — keep this the single source of truth.
             buildConfigField("String", "API_BASE_URL", "\"{{API_BASE_URL_DEV}}\"")
         }
         create("prod") {
@@ -428,30 +438,37 @@ dependencies {
     implementation(libs.okhttp.logging)
     implementation(libs.kotlinx.coroutines.android)
 
-    // Image loading (Coil 3). Pull both `coil-compose` and `coil-network-okhttp` —
-    // the network-okhttp module is what plugs Coil into OkHttp for http(s) URLs.
+    // Image loading (Coil 3). `coil-network-okhttp` is what lets `AsyncImage` fetch
+    // http(s) URLs through the project's shared OkHttpClient (registered on the
+    // Application via `SingletonImageLoader.Factory`).
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)
 
-    // INCLUDE_ROOM
-    implementation(libs.room.runtime)
-    implementation(libs.room.ktx)
-    ksp(libs.room.compiler)
+    // INCLUDE_ROOM: implementation(libs.room.runtime)
+    // INCLUDE_ROOM: implementation(libs.room.ktx)
+    // INCLUDE_ROOM: ksp(libs.room.compiler)
 
-    // INCLUDE_DATASTORE
-    implementation(libs.datastore.preferences)
+    // INCLUDE_DATASTORE: implementation(libs.datastore.preferences)
 
     // INCLUDE_FIREBASE — no `-ktx` artifacts (deprecated since BOM 32.5).
-    implementation(platform(libs.firebase.bom))
-    implementation(libs.firebase.crashlytics)
-    implementation(libs.firebase.analytics)
+    // INCLUDE_FIREBASE: implementation(platform(libs.firebase.bom))
+    // INCLUDE_FIREBASE: implementation(libs.firebase.crashlytics)
+    // INCLUDE_FIREBASE: implementation(libs.firebase.analytics)
 
     testImplementation(libs.junit)
     testImplementation(libs.mockk)
     testImplementation(libs.turbine)
     testImplementation(libs.kotlinx.coroutines.test)
+
+    // Compose UI tests — pulled through the same Compose BOM so versions stay aligned.
+    androidTestImplementation(platform(libs.compose.bom))
+    androidTestImplementation(libs.compose.ui.test.junit4)
+    androidTestImplementation(libs.androidx.test.ext.junit)
+    debugImplementation(libs.compose.ui.test.manifest)
 }
 ```
+
+**Conditional dependency block markers.** Lines prefixed `// INCLUDE_<FLAG>:` are emitted verbatim (without the prefix) when the flag is true and dropped entirely when it's false. This is the same per-line shape used in the `plugins { ... }` block — the scaffolder strips `// INCLUDE_X: ` from each line that survives. Don't switch to multi-line section comments; the per-line marker is unambiguous and resilient to reordering.
 
 **Placeholders to resolve at scaffold time:**
 
@@ -462,6 +479,19 @@ dependencies {
 | `{{TARGET_SDK}}` | Same as `{{COMPILE_SDK}}` unless the user has a reason to lag. |
 
 > **Optional: declarative compileSdk DSL.** AGP 8.10+ also supports `compileSdk { version = release(N) { minorApiLevel = 1 } }` for tracking minor platform updates. Stick with the integer form by default — it's simpler and the version catalog already gives you a single source of truth.
+
+### `app/proguard-rules.pro`
+
+Empty stub. AGP references this path from the `release` build type (`proguardFiles(getDefaultProguardFile(...), "proguard-rules.pro")`) and prints a warning if the file is missing — emitting an empty one keeps the build log clean. Most libraries used in this scaffold ship `consumer-rules.pro` so callers don't need to add anything: Compose, Hilt, Retrofit, OkHttp, kotlinx.serialization, Coil 3 — all self-keep. Add rules here only when R8 actually shrinks something it shouldn't (`./gradlew :app:bundleRelease` will surface a missing keep-rule as a runtime crash on a release `.aab`, never on a debug build).
+
+```
+# Project-specific ProGuard / R8 rules.
+#
+# Compose, Hilt, Retrofit, OkHttp, kotlinx-serialization, Coil 3 all ship
+# consumer rules — leave this file empty until R8 strips something it shouldn't.
+# When that happens, add the minimal `-keep` rule with a one-line comment
+# explaining what was stripped and where the crash showed up.
+```
 
 ### `app/src/main/AndroidManifest.xml`
 
@@ -506,9 +536,11 @@ dependencies {
 
 ### `app/src/main/res/values/themes.xml`
 
+The platform theme is the activity's window theme — the surface that paints **before** Compose has a chance to render. `DayNight.NoActionBar` honors the system dark/light mode, so a dark-mode device doesn't flash a light background on cold start. The Compose `AppTheme` (Material 3) takes over once `setContent` runs.
+
 ```xml
 <resources xmlns:tools="http://schemas.android.com/tools">
-    <style name="Theme.App" parent="android:Theme.Material.Light.NoActionBar" />
+    <style name="Theme.App" parent="android:Theme.DeviceDefault.DayNight.NoActionBar" />
 </resources>
 ```
 
@@ -516,17 +548,28 @@ dependencies {
 
 Single variant for Firebase and non-Firebase scaffolds. The `AnalyticsTracker` interface is always present (`core/data/analytics/AnalyticsModule` binds it to `FirebaseAnalyticsTracker` or `NoopAnalyticsTracker` based on the `INCLUDE_FIREBASE` flag), so this Application class doesn't change shape.
 
+The Application also implements `SingletonImageLoader.Factory` so Coil 3 reuses the project's single `OkHttpClient` (provided by `NetworkModule`) for image fetches — same connection pool, same interceptors (auth, headers) as Retrofit. Without this hook, `coil-network-okhttp` would silently fall back to its own internal network stack and any future `AuthInterceptor` wouldn't reach image requests.
+
+`OkHttpClient` is injected as `Provider<OkHttpClient>` because `newImageLoader(...)` may be invoked before any composable triggers Hilt to materialize the singleton — `Provider.get()` defers construction until the first `AsyncImage` actually needs the client.
+
 ```kotlin
 package {{PACKAGE_ID}}
 
 import android.app.Application
+import coil3.ImageLoader
+import coil3.PlatformContext
+import coil3.SingletonImageLoader
+import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import dagger.hilt.android.HiltAndroidApp
+import okhttp3.OkHttpClient
 import {{PACKAGE_ID}}.core.domain.analytics.AnalyticsTracker
 import javax.inject.Inject
+import javax.inject.Provider
 
 @HiltAndroidApp
-class {{APP_CLASS}} : Application() {
+class {{APP_CLASS}} : Application(), SingletonImageLoader.Factory {
     @Inject lateinit var analytics: AnalyticsTracker
+    @Inject lateinit var okHttpProvider: Provider<OkHttpClient>
 
     override fun onCreate() {
         super.onCreate()
@@ -534,6 +577,13 @@ class {{APP_CLASS}} : Application() {
         // collection so debug installs don't pollute prod dashboards.
         analytics.setCollectionEnabled(!BuildConfig.DEBUG)
     }
+
+    override fun newImageLoader(context: PlatformContext): ImageLoader =
+        ImageLoader.Builder(context)
+            .components {
+                add(OkHttpNetworkFetcherFactory(callFactory = { okHttpProvider.get() }))
+            }
+            .build()
 }
 ```
 
@@ -619,9 +669,29 @@ fun AppNavGraph() {
 }
 ```
 
+### `app/src/main/java/{{PACKAGE_PATH}}/home/ui/HomeViewModel.kt`
+
+A minimal ViewModel that injects `AnalyticsTracker` so `HomeScreen` can use the `TrackScreen` Compose helper. The tracker is exposed as a public `val` so the helper can read it inline — that's mildly unusual (VMs normally don't surface their deps) but it's the cleanest way to demonstrate `TrackScreen` without inventing a `CompositionLocal` for analytics. For richer screens, prefer firing analytics from the VM and exposing only state/events.
+
+```kotlin
+package {{PACKAGE_ID}}.home.ui
+
+import androidx.lifecycle.ViewModel
+import dagger.hilt.android.lifecycle.HiltViewModel
+import {{PACKAGE_ID}}.core.domain.analytics.AnalyticsTracker
+import javax.inject.Inject
+
+@HiltViewModel
+class HomeViewModel @Inject constructor(
+    val analytics: AnalyticsTracker,
+) : ViewModel()
+```
+
 ### `app/src/main/java/{{PACKAGE_PATH}}/home/ui/HomeScreen.kt`
 
 Hosts the bottom `NavigationBar` and the *nested* tab `NavHost`. Tabs are typed `@Serializable` destinations. Selection is computed from the current back-stack entry via `NavDestination.hasRoute(KClass)` — no string comparisons, no hand-rolled selected-index state. The shell feature is the one place that knows about its tab features (`feed/`, `profile/`); tab features don't know about each other.
+
+`TrackScreen` fires `AnalyticsEvent.HomeViewed` once per entry into composition — exactly the pattern recommended in the analytics section for richer screens. Feed and Profile track from VM `init` (simpler; OK for trivial screens); `HomeScreen` uses the helper so the scaffold demonstrates both shapes.
 
 ```kotlin
 package {{PACKAGE_ID}}.home.ui
@@ -640,6 +710,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
+import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
@@ -648,8 +719,10 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import kotlinx.serialization.Serializable
 import {{PACKAGE_ID}}.R
-import {{PACKAGE_ID}}.feed.ui.FeedScreen
-import {{PACKAGE_ID}}.profile.ui.ProfileScreen
+import {{PACKAGE_ID}}.core.domain.analytics.AnalyticsEvent
+import {{PACKAGE_ID}}.core.ui.common.TrackScreen
+import {{PACKAGE_ID}}.feed.ui.FeedRoute
+import {{PACKAGE_ID}}.profile.ui.ProfileRoute
 
 @Serializable sealed interface HomeRoute {
     @Serializable data object Feed : HomeRoute
@@ -663,7 +736,9 @@ private data class HomeTab(
 )
 
 @Composable
-fun HomeScreen() {
+fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
+    TrackScreen(viewModel.analytics, AnalyticsEvent.HomeViewed)
+
     val nav = rememberNavController()
     val backStack by nav.currentBackStackEntryAsState()
     val current = backStack?.destination
@@ -699,8 +774,8 @@ fun HomeScreen() {
             startDestination = HomeRoute.Feed,
             modifier = Modifier.padding(padding),
         ) {
-            composable<HomeRoute.Feed> { FeedScreen() }
-            composable<HomeRoute.Profile> { ProfileScreen() }
+            composable<HomeRoute.Feed> { FeedRoute() }
+            composable<HomeRoute.Profile> { ProfileRoute() }
         }
     }
 }
@@ -708,7 +783,11 @@ fun HomeScreen() {
 
 ### `app/src/main/java/{{PACKAGE_PATH}}/feed/ui/FeedScreen.kt`
 
-Stateless composable + state holder pattern. The VM owns state; the composable observes via `collectAsStateWithLifecycle`.
+Route + Screen split — the project's canonical Compose shape (see `compose-ui`):
+
+- **`FeedRoute`** owns the ViewModel via `hiltViewModel()` and forwards state to the stateless screen.
+- **`FeedScreen`** takes state + callbacks. Pure UI, previewable, testable without Hilt.
+- **`@Preview`** renders the stateless screen with sample data.
 
 ```kotlin
 package {{PACKAGE_ID}}.feed.ui
@@ -720,15 +799,28 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import {{PACKAGE_ID}}.core.ui.theme.AppTheme
 
 @Composable
-fun FeedScreen(vm: FeedViewModel = hiltViewModel()) {
-    val state by vm.state.collectAsStateWithLifecycle()
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+fun FeedRoute(viewModel: FeedViewModel = hiltViewModel()) {
+    val state by viewModel.state.collectAsStateWithLifecycle()
+    FeedScreen(state = state)
+}
+
+@Composable
+fun FeedScreen(state: FeedState, modifier: Modifier = Modifier) {
+    Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Text("Feed (${state.items.size} items)")
     }
+}
+
+@Preview
+@Composable
+private fun FeedScreenPreview() = AppTheme {
+    FeedScreen(state = FeedState(items = listOf("hello", "world")))
 }
 ```
 
@@ -765,25 +857,57 @@ class FeedViewModel @Inject constructor(
 
 ### `app/src/main/java/{{PACKAGE_PATH}}/profile/ui/ProfileScreen.kt`
 
+Same Route + Screen + Preview shape as `FeedScreen`, plus an `AsyncImage` that demonstrates the Coil 3 wiring end-to-end. The `model` is null in the scaffold so the preview and the launchable app both render without a network round-trip — replace with a real URL on first use. Coil's network fetcher reuses the project's `OkHttpClient` because `{{APP_CLASS}}` registered an `OkHttpNetworkFetcherFactory` (see "Application" above).
+
 ```kotlin
 package {{PACKAGE_ID}}.profile.ui
 
-import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil3.compose.AsyncImage
+import {{PACKAGE_ID}}.core.ui.theme.AppTheme
 
 @Composable
-fun ProfileScreen(vm: ProfileViewModel = hiltViewModel()) {
-    val state by vm.state.collectAsStateWithLifecycle()
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+fun ProfileRoute(viewModel: ProfileViewModel = hiltViewModel()) {
+    val state by viewModel.state.collectAsStateWithLifecycle()
+    ProfileScreen(state = state)
+}
+
+@Composable
+fun ProfileScreen(state: ProfileState, modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier.fillMaxSize(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        AsyncImage(
+            model = state.avatarUrl,
+            contentDescription = null,
+            modifier = Modifier
+                .size(96.dp)
+                .clip(CircleShape),
+        )
         Text("Profile (${state.userName})")
     }
+}
+
+@Preview
+@Composable
+private fun ProfileScreenPreview() = AppTheme {
+    ProfileScreen(state = ProfileState(userName = "guest", avatarUrl = null))
 }
 ```
 
@@ -801,7 +925,10 @@ import {{PACKAGE_ID}}.core.domain.analytics.AnalyticsEvent
 import {{PACKAGE_ID}}.core.domain.analytics.AnalyticsTracker
 import javax.inject.Inject
 
-data class ProfileState(val userName: String = "guest")
+data class ProfileState(
+    val userName: String = "guest",
+    val avatarUrl: String? = null,
+)
 
 @HiltViewModel
 class ProfileViewModel @Inject constructor(
@@ -848,6 +975,60 @@ class FeedViewModelTest {
         val analytics = mockk<AnalyticsTracker>(relaxed = true)
         FeedViewModel(analytics)
         verify(exactly = 1) { analytics.track(AnalyticsEvent.FeedViewed) }
+    }
+}
+```
+
+### `app/src/androidTest/java/{{PACKAGE_PATH}}/feed/ui/FeedScreenTest.kt`
+
+A happy-path Compose UI test that proves the Route/Screen split is testable without Hilt. The test drives the **stateless** `FeedScreen` directly — that's the whole point of hoisting state out of the composable. `compose-ui` and `/add-screen` both mandate this shape; the scaffold ships it so subsequent screens have a working template to copy.
+
+```kotlin
+package {{PACKAGE_ID}}.feed.ui
+
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithText
+import org.junit.Rule
+import org.junit.Test
+import {{PACKAGE_ID}}.core.ui.theme.AppTheme
+
+class FeedScreenTest {
+    @get:Rule val composeRule = createComposeRule()
+
+    @Test fun rendersItemCount() {
+        composeRule.setContent {
+            AppTheme {
+                FeedScreen(state = FeedState(items = listOf("a", "b", "c")))
+            }
+        }
+        composeRule.onNodeWithText("Feed (3 items)").assertIsDisplayed()
+    }
+}
+```
+
+### `app/src/androidTest/java/{{PACKAGE_PATH}}/profile/ui/ProfileScreenTest.kt`
+
+```kotlin
+package {{PACKAGE_ID}}.profile.ui
+
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithText
+import org.junit.Rule
+import org.junit.Test
+import {{PACKAGE_ID}}.core.ui.theme.AppTheme
+
+class ProfileScreenTest {
+    @get:Rule val composeRule = createComposeRule()
+
+    @Test fun rendersUserName() {
+        composeRule.setContent {
+            AppTheme {
+                ProfileScreen(state = ProfileState(userName = "Ada", avatarUrl = null))
+            }
+        }
+        composeRule.onNodeWithText("Profile (Ada)").assertIsDisplayed()
     }
 }
 ```
@@ -971,40 +1152,6 @@ sealed class AnalyticsEvent(
 
 Repository implementations + framework adapters (Retrofit, Room, DataStore). Depends on `core/domain/`; `core/domain/` never depends on it. All Retrofit / Room / DataStore deps already live in `app/build.gradle.kts` above — no separate module build file.
 
-### `app/src/main/java/{{PACKAGE_PATH}}/core/data/network/ApiClientFactory.kt`
-
-```kotlin
-package {{PACKAGE_ID}}.core.data.network
-
-import kotlinx.serialization.json.Json
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
-import okhttp3.logging.HttpLoggingInterceptor
-import retrofit2.Retrofit
-import retrofit2.converter.kotlinx.serialization.asConverterFactory
-import java.util.concurrent.TimeUnit
-
-object ApiClientFactory {
-    fun retrofit(baseUrl: String): Retrofit {
-        val client = OkHttpClient.Builder()
-            .callTimeout(30, TimeUnit.SECONDS)
-            .connectTimeout(15, TimeUnit.SECONDS)
-            .readTimeout(30, TimeUnit.SECONDS)
-            .addInterceptor(HttpLoggingInterceptor().apply {
-                level = HttpLoggingInterceptor.Level.BASIC
-            })
-            .build()
-
-        val json = Json { ignoreUnknownKeys = true; explicitNulls = false }
-        return Retrofit.Builder()
-            .baseUrl(baseUrl)
-            .client(client)
-            .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
-            .build()
-    }
-}
-```
-
 ### `app/src/main/java/{{PACKAGE_PATH}}/core/data/network/SampleApi.kt`
 
 Minimal Retrofit service + DTO so the scaffold demonstrates the full networking shape (interface + suspend fun + `@Serializable` DTO). Replace with real endpoints; the `ping` call is just an anchor.
@@ -1080,7 +1227,13 @@ class RemoteDataSource @Inject constructor(
 }
 ```
 
-### `app/src/main/java/{{PACKAGE_PATH}}/core/data/network/di/DataModule.kt`
+### `app/src/main/java/{{PACKAGE_PATH}}/core/data/network/di/NetworkModule.kt`
+
+The single source of truth for the HTTP stack. Three reasons every piece is its own `@Provides`:
+
+1. **`OkHttpClient` is shared.** Coil 3 reuses it for image fetching (see `{{APP_CLASS}}.newImageLoader`), and any future `AuthInterceptor` plugs in here once instead of in three places.
+2. **Logging is gated on `BuildConfig.DEBUG`.** `Level.BODY` in release would log PII. `retrofit-networking` calls this out as a top pitfall.
+3. **`Json` is its own singleton.** `provideRetrofit` takes it as a parameter so test modules can swap a stricter `Json` instance per test without rebuilding the whole stack.
 
 ```kotlin
 package {{PACKAGE_ID}}.core.data.network.di
@@ -1089,21 +1242,50 @@ import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
+import kotlinx.serialization.json.Json
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
+import retrofit2.converter.kotlinx.serialization.asConverterFactory
 import retrofit2.create
 import {{PACKAGE_ID}}.BuildConfig
-import {{PACKAGE_ID}}.core.data.network.ApiClientFactory
 import {{PACKAGE_ID}}.core.data.network.SampleApi
+import java.util.concurrent.TimeUnit
 import javax.inject.Singleton
 
 @Module
 @InstallIn(SingletonComponent::class)
-object DataModule {
+object NetworkModule {
     @Provides @Singleton
-    fun retrofit(): Retrofit = ApiClientFactory.retrofit(BuildConfig.API_BASE_URL)
+    fun provideOkHttp(): OkHttpClient = OkHttpClient.Builder()
+        .connectTimeout(10, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
+        .apply {
+            if (BuildConfig.DEBUG) {
+                addInterceptor(
+                    HttpLoggingInterceptor().apply { level = HttpLoggingInterceptor.Level.BODY },
+                )
+            }
+        }
+        .build()
 
     @Provides @Singleton
-    fun sampleApi(retrofit: Retrofit): SampleApi = retrofit.create()
+    fun provideJson(): Json = Json {
+        ignoreUnknownKeys = true
+        explicitNulls = false
+        coerceInputValues = true
+    }
+
+    @Provides @Singleton
+    fun provideRetrofit(client: OkHttpClient, json: Json): Retrofit = Retrofit.Builder()
+        .baseUrl(BuildConfig.API_BASE_URL)
+        .client(client)
+        .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
+        .build()
+
+    @Provides @Singleton
+    fun provideSampleApi(retrofit: Retrofit): SampleApi = retrofit.create()
 }
 ```
 
@@ -1259,7 +1441,7 @@ fun TrackScreen(tracker: AnalyticsTracker, event: AnalyticsEvent) {
 }
 ```
 
-> The Feed/Profile VMs in this scaffold call `analytics.track(...)` from `init`, which is fine for a starter screen. For richer screens you may prefer `TrackScreen(...)` at the top of the composable so the event fires on every nav-entry rather than only on VM construction (relevant when a VM survives across nav transitions via `SavedStateHandle`).
+> The scaffold demonstrates both shapes on purpose. `Feed`/`Profile` VMs call `analytics.track(...)` from `init` — simplest possible wiring, fine for a starter screen. `HomeScreen` uses `TrackScreen(...)` at the top of the composable instead — that's the shape to prefer for richer screens, because the event fires on every nav-entry into composition rather than only on VM construction (which matters when the VM survives across nav transitions via `SavedStateHandle`).
 
 ---
 
@@ -1322,6 +1504,36 @@ interface SampleDao {
 }
 ```
 
+### `app/src/main/java/{{PACKAGE_PATH}}/core/data/persistence/di/PersistenceModule.kt`
+
+The `@Module` that lets the rest of the graph `@Inject SampleDao` (or any future DAO) without knowing about the Room builder. Without this, the entity + DAO files compile but are unreachable from a ViewModel — the analytics flag's `AnalyticsModule` is the parallel, and `INCLUDE_ROOM` should ship the same level of wiring.
+
+```kotlin
+package {{PACKAGE_ID}}.core.data.persistence.di
+
+import android.content.Context
+import androidx.room.Room
+import dagger.Module
+import dagger.Provides
+import dagger.hilt.InstallIn
+import dagger.hilt.android.qualifiers.ApplicationContext
+import dagger.hilt.components.SingletonComponent
+import {{PACKAGE_ID}}.core.data.persistence.AppDatabase
+import {{PACKAGE_ID}}.core.data.persistence.SampleDao
+import javax.inject.Singleton
+
+@Module
+@InstallIn(SingletonComponent::class)
+object PersistenceModule {
+    @Provides @Singleton
+    fun provideAppDatabase(@ApplicationContext context: Context): AppDatabase =
+        Room.databaseBuilder(context, AppDatabase::class.java, "app.db").build()
+
+    @Provides
+    fun provideSampleDao(db: AppDatabase): SampleDao = db.sampleDao()
+}
+```
+
 Enable schema export in `app/build.gradle.kts` (inside the `android { }` block):
 
 ```kts
@@ -1332,6 +1544,8 @@ ksp { arg("room.schemaLocation", "$projectDir/schemas") }
 
 ### `app/src/main/java/{{PACKAGE_PATH}}/core/data/datastore/AppPreferences.kt`
 
+`@Inject` + `@ApplicationContext` so this is reachable from any ViewModel / repository without manual construction. The `preferencesDataStore` delegate is registered as a top-level extension on `Context` exactly once — DataStore enforces a single instance per name per process and crashes with `Cannot have multiple DataStores active for the same file` if it's instantiated twice.
+
 ```kotlin
 package {{PACKAGE_ID}}.core.data.datastore
 
@@ -1339,12 +1553,18 @@ import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.preferencesDataStore
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import javax.inject.Inject
+import javax.inject.Singleton
 
 private val Context.prefs by preferencesDataStore(name = "app")
 
-class AppPreferences(private val context: Context) {
+@Singleton
+class AppPreferences @Inject constructor(
+    @ApplicationContext private val context: Context,
+) {
     private val onboardingDone = booleanPreferencesKey("onboarding_done")
 
     fun onboardingDone(): Flow<Boolean> =
@@ -1355,6 +1575,8 @@ class AppPreferences(private val context: Context) {
     }
 }
 ```
+
+`AppPreferences` is `@Inject`-constructable, so no `@Provides` is needed — Hilt instantiates it on first use. Add a `core/data/datastore/di/DataStoreModule.kt` only when you need to expose typed bindings (`@Binds`-style) for an interface like `AppSettings`. For now keep the class concrete and inject it directly.
 
 ## INCLUDE_FIREBASE additions
 

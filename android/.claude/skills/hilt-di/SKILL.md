@@ -15,15 +15,15 @@ description: How Hilt is wired up and used in this project. Load when adding a n
 
 ## Where modules live
 
-Co-locate modules with the implementations they bind.
+Co-locate modules with the implementations they bind. The project is **feature-first**, so feature-owned modules live next to the implementations they wire; cross-cutting plumbing lives under `core/`:
 
 ```
-data/di/OrderDataModule.kt   # provides OrderApi, binds OrderRepositoryImpl
-core/di/NetworkModule.kt     # provides OkHttp, Retrofit
-core/di/DispatcherModule.kt  # provides Dispatchers
+<feature>/data/di/<Feature>DataModule.kt   # provides <Feature>Api, binds <Feature>RepositoryImpl
+core/data/network/di/NetworkModule.kt      # provides OkHttp, Json, Retrofit, SampleApi
+core/di/DispatcherModule.kt                # provides Dispatchers (cross-cutting, not data-layer)
 ```
 
-Avoid a single `AppModule` that knows about everything.
+`core/data/network/di/` is correct because the network providers belong to the data layer's networking subpackage. Reach for `core/di/` only for things that don't belong to a layer (dispatchers, clocks, IDs). Avoid a single `AppModule` that knows about everything.
 
 ## `@Provides` vs `@Binds`
 

@@ -43,7 +43,8 @@ Steps:
        }
    }
    ```
-   For non-trivial test setup, delegate to `android-tester` via the `Task` tool.
+
+   The `Success` shape assumes a sealed `UiState` with Loading/Error/Success variants. If your screen has a single `data class` UiState, drive the test with that directly (see `feed/ui/FeedScreenTest.kt` in the scaffold for the simpler shape). For non-trivial test setup, delegate to `android-tester` via the `Task` tool.
 
 7. Verify: `./gradlew :app:assembleDebug` (and `./gradlew :app:connectedDebugAndroidTest --tests '*<Screen>ScreenTest*'` if an emulator is attached; otherwise flag the test as ready-to-run and stop).
 8. Report the files you created, the route you added, and any next steps (e.g. "hook up the real repository call").

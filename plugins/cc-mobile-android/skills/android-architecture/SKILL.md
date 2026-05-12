@@ -56,16 +56,19 @@ What lives here:
 - **Repository implementation** — implements the domain interface.
 
 ```kotlin
-// data/remote/OrderApi.kt
+// <feature>/data/remote/OrderDto.kt — DTO + colocated mapper
+@Serializable
+data class OrderDto(val id: String, /* ... */)
+
+fun OrderDto.toDomain(): Order = Order(id = OrderId(id), /* ... */)
+
+// <feature>/data/remote/OrderApi.kt
 interface OrderApi {
     @GET("orders/{id}")
     suspend fun getOrder(@Path("id") id: String): OrderDto
 }
 
-// data/mapper/OrderMapper.kt
-fun OrderDto.toDomain(): Order = Order(id = OrderId(id), ...)
-
-// data/repository/OrderRepositoryImpl.kt
+// <feature>/data/repository/OrderRepositoryImpl.kt
 class OrderRepositoryImpl @Inject constructor(
     private val api: OrderApi,
     private val dao: OrderDao,
@@ -74,6 +77,8 @@ class OrderRepositoryImpl @Inject constructor(
         runCatching { api.getOrder(id.raw).toDomain() }.toOutcome(::toDomainError)
 }
 ```
+
+The mapper sits in `OrderDto.kt` next to the DTO it transforms. Promote to a `<feature>/data/mapper/` package only when several DTOs map to the same domain type and the shared file would clarify ownership — see the feature checklist below.
 
 `toOutcome` and `toDomainError` are scaffolded once in `core/data/network/Outcomes.kt` (see `android-app-skeleton` → "core/data/"). Every repository goes through them — the helper rethrows `CancellationException`, which the open-coded `runCatching { ... }.fold(...)` shape silently swallows.
 
