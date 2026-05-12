@@ -84,7 +84,7 @@ Dependency direction is always **presentation → domain ← data**. The domain 
 - **Write tests** for new use cases and ViewModels. Compose UI tests for new screens where practical.
 - **Use the version catalog** when adding dependencies.
 - **Respect Kotlin idioms**: data classes, sealed classes/interfaces, extension functions, scope functions used sparingly and intentionally.
-- **Keep Composables small.** Extract when a function body exceeds ~40 lines or has >2 levels of nesting.
+- **Keep Composables small.** Extract children when a function body exceeds ~60-80 lines or nesting exceeds 3 levels — but the real rule is readability and single-responsibility, not the line count. See `.claude/skills/compose-ui/SKILL.md` for the rationale.
 
 ## Specialist agents
 

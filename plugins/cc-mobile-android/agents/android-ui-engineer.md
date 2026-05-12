@@ -65,4 +65,4 @@ private fun ProfileScreenPreview() = AppTheme {
 - No `LiveData` in new code — use `StateFlow`.
 - No `remember { mutableStateOf(...) }` for anything the ViewModel should own.
 - No business logic in composables. No network or DB calls. No `LaunchedEffect` that reaches into a repository.
-- No `@Composable` function longer than ~40 lines — extract children.
+- No `@Composable` longer than ~60-80 lines or with >3 levels of nesting — extract children when concerns mix (layout + stateful behaviour + event handling). Lines alone aren't the rule; readability is.
