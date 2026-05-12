@@ -1,5 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "_comment": "Hook bodies live in .claude/hooks/*.sh so they're versionable, testable, and reviewable. ${CLAUDE_PLUGIN_ROOT} resolves to the unpacked plugin dir when shipped via cc-mobile-flutter.plugin; falls back to the workspace .claude/ when used directly.",
   "hooks": {
     "PostToolUse": [
       {
@@ -7,7 +8,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash -c 'FILE=\"$CLAUDE_FILE_PATHS\"; case \"$FILE\" in *.dart) if command -v dart >/dev/null 2>&1; then dart format \"$FILE\" >/dev/null 2>&1 || true; else echo \"dart format: skipped (not installed)\"; fi ;; esac'"
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT:-.claude}/hooks/format.sh\""
           }
         ]
       }
@@ -18,7 +19,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash -c 'CMD=\"$CLAUDE_TOOL_INPUT_command\"; case \"$CMD\" in *\"git commit\"*) if command -v dart >/dev/null 2>&1 && [ -f pubspec.yaml ]; then dart analyze --fatal-infos --fatal-warnings || { echo \"dart analyze failed; commit blocked\"; exit 1; }; else echo \"dart: skipped (not installed or not a Flutter project)\"; fi ;; esac'"
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT:-.claude}/hooks/pre-commit.sh\""
           }
         ]
       }

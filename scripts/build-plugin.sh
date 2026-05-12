@@ -16,6 +16,8 @@
 #     skills/                        # wiped + refilled from <stack>/.claude/skills
 #     agents/                        # wiped + refilled from <stack>/.claude/agents
 #     commands/                      # wiped + refilled from <stack>/.claude/commands
+#     hooks/                         # wiped + refilled from <stack>/.claude/hooks
+#     hooks.json                     # copied from <stack>/.claude/hooks.json
 #     CLAUDE.md                      # refilled from <stack>/CLAUDE.md
 #   plugins/cc-mobile-<stack>.plugin # zip of the directory above
 #
@@ -93,8 +95,8 @@ JSON"
   fi
 
   # 4. Refresh dynamic content
-  info "refreshing skills/ agents/ commands/, hooks.json, and CLAUDE.md from $stack/"
-  rm -rf "$plugin_dir/skills" "$plugin_dir/agents" "$plugin_dir/commands"
+  info "refreshing skills/ agents/ commands/ hooks/ hooks.json and CLAUDE.md from $stack/"
+  rm -rf "$plugin_dir/skills" "$plugin_dir/agents" "$plugin_dir/commands" "$plugin_dir/hooks"
 
   if [[ -d "$src/.claude/skills" ]]; then
     cp -R "$src/.claude/skills" "$plugin_dir/skills"
@@ -107,11 +109,20 @@ JSON"
   fi
   cp "$src/CLAUDE.md" "$plugin_dir/CLAUDE.md"
 
-  # hooks.json ships so plugin consumers get auto-format + pre-commit gates.
+  # hooks.json + hooks/ scripts ship together. The JSON references
+  # ${CLAUDE_PLUGIN_ROOT}/hooks/<name>.sh, which Claude Code substitutes with
+  # the unpacked plugin dir at runtime. Without the scripts, the JSON is dead.
   if [[ -f "$src/.claude/hooks.json" ]]; then
     cp "$src/.claude/hooks.json" "$plugin_dir/hooks.json"
   else
     rm -f "$plugin_dir/hooks.json"
+  fi
+  if [[ -d "$src/.claude/hooks" ]]; then
+    cp -R "$src/.claude/hooks" "$plugin_dir/hooks"
+    # Preserve executable bits — cp -R on macOS keeps them, but be defensive
+    # in case the source tree was checked out without them (Windows / certain
+    # tarball extractions).
+    find "$plugin_dir/hooks" -name '*.sh' -exec chmod +x {} \;
   fi
 
   # 5. settings.json is intentionally NOT shipped — it's Claude Code user config,

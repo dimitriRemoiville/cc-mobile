@@ -1,5 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "_comment": "Hook bodies live in .claude/hooks/*.sh so they're versionable, testable, and reviewable. ${CLAUDE_PLUGIN_ROOT} resolves to the unpacked plugin dir when shipped via cc-mobile-ios.plugin; falls back to the workspace .claude/ when used directly.",
   "hooks": {
     "PostToolUse": [
       {
@@ -7,7 +8,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash -c 'FILE=\"$CLAUDE_FILE_PATHS\"; case \"$FILE\" in *.swift) if command -v swiftformat >/dev/null 2>&1; then swiftformat \"$FILE\" >/dev/null 2>&1 || true; else echo \"swiftformat: skipped (not installed)\"; fi; if command -v swiftlint >/dev/null 2>&1; then swiftlint --fix --quiet \"$FILE\" 2>/dev/null || true; fi ;; esac'"
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT:-.claude}/hooks/format.sh\""
           }
         ]
       }
@@ -18,7 +19,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash -c 'CMD=\"$CLAUDE_TOOL_INPUT_command\"; case \"$CMD\" in *\"git commit\"*) if [ ! -f Package.swift ] && ! ls *.xcodeproj >/dev/null 2>&1 && ! ls *.xcworkspace >/dev/null 2>&1; then echo \"no Package.swift / .xcodeproj / .xcworkspace at repo root (likely a KMM repo); skipping ios pre-commit\"; else if command -v swiftlint >/dev/null 2>&1; then swiftlint --quiet --strict || { echo \"swiftlint failed; commit blocked\"; exit 1; }; else echo \"swiftlint: skipped (not installed)\"; fi; if [ -f Package.swift ]; then swift build 2>&1 | tail -20 || { echo \"swift build failed; commit blocked\"; exit 1; }; fi; fi ;; esac'"
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT:-.claude}/hooks/pre-commit.sh\""
           }
         ]
       }

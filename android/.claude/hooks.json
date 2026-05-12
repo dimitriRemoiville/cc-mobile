@@ -1,5 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "_comment": "Hook bodies live in .claude/hooks/*.sh so they're versionable, testable, and reviewable. ${CLAUDE_PLUGIN_ROOT} resolves to the unpacked plugin dir when shipped via cc-mobile-android.plugin; falls back to the workspace .claude/ when used directly.",
   "hooks": {
     "PostToolUse": [
       {
@@ -7,7 +8,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash -c 'FILE=\"$CLAUDE_FILE_PATHS\"; case \"$FILE\" in *.kt|*.kts) if command -v ktlint >/dev/null 2>&1; then ktlint -F \"$FILE\" 2>/dev/null || true; elif [ -x ./gradlew ]; then ./gradlew -q ktlintFormat 2>/dev/null || echo \"ktlint: skipped (no ktlint binary, Gradle task unavailable)\"; else echo \"ktlint: skipped (not installed)\"; fi ;; esac'"
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT:-.claude}/hooks/format.sh\""
           }
         ]
       }
@@ -18,7 +19,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash -c 'CMD=\"$CLAUDE_TOOL_INPUT_command\"; case \"$CMD\" in *\"git commit\"*) if [ ! -x ./gradlew ]; then echo \"gradle wrapper missing; skipping pre-commit lint\"; elif ! grep -qE \"include[^A-Za-z]+[\\\"'\\'']:app[\\\"'\\'']\" settings.gradle settings.gradle.kts 2>/dev/null; then echo \"no :app module here (likely a KMM/multi-module repo); skipping android pre-commit\"; else ./gradlew -q :app:lintDebug :app:testDebugUnitTest || { echo \"lint/tests failed; commit blocked\"; exit 1; }; fi ;; esac'"
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT:-.claude}/hooks/pre-commit.sh\""
           }
         ]
       }
