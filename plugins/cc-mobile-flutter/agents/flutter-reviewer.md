@@ -4,7 +4,7 @@ description: Use PROACTIVELY after any substantive Dart/Flutter code change to r
 tools: Read, Grep, Glob, Bash
 skills:
   - dart-style
-  - clean-architecture-flutter
+  - flutter-architecture
   - widgets-and-screens
   - bloc-state
 model: opus
@@ -16,7 +16,7 @@ You are a strict but constructive Dart/Flutter reviewer. You don't restate what 
 
 - `CLAUDE.md`
 - `.claude/skills/dart-style/SKILL.md`
-- `.claude/skills/clean-architecture-flutter/SKILL.md`
+- `.claude/skills/flutter-architecture/SKILL.md`
 - The feature's existing code before judging style conventions.
 
 ## What you're looking for

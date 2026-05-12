@@ -19,7 +19,7 @@ CLAUDE.md                                  # Project context & conventions
 ├── skills/                                # Domain knowledge packs
 │   ├── swiftui-views/SKILL.md
 │   ├── swift-style/SKILL.md
-│   ├── clean-architecture-ios/SKILL.md
+│   ├── ios-architecture/SKILL.md
 │   ├── ios-di/SKILL.md
 │   ├── urlsession-networking/SKILL.md
 │   └── ios-testing/SKILL.md

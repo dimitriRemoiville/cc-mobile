@@ -30,7 +30,7 @@ Opinionated Claude Code setup for Flutter apps — Clean Architecture, `flutter_
 
 **Skills** (auto-loaded by domain)
 
-- `clean-architecture-flutter` — layer rules per feature.
+- `flutter-architecture` — layer rules per feature.
 - `dart-style` — idioms, nullability, naming.
 - `widgets-and-screens` — Page / View split, state hoisting, previews.
 - `bloc-state` — `bloc_concurrency`, freezed states, effects.

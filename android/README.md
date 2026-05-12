@@ -19,7 +19,7 @@ CLAUDE.md                                  # Project context & conventions
 ├── skills/                                # Domain knowledge packs
 │   ├── compose-ui/SKILL.md
 │   ├── kotlin-style/SKILL.md
-│   ├── clean-architecture/SKILL.md
+│   ├── android-architecture/SKILL.md
 │   ├── hilt-di/SKILL.md
 │   ├── retrofit-networking/SKILL.md
 │   └── android-testing/SKILL.md

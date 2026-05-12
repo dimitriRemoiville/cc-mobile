@@ -3,7 +3,7 @@ name: flutter-architect
 description: Use PROACTIVELY for architectural decisions in a Flutter app — where code belongs, how to model state, when to add a use case, when to split a feature, how a new domain concept should surface. Not for writing UI code or running tests.
 tools: Read, Grep, Glob, Bash
 skills:
-  - clean-architecture-flutter
+  - flutter-architecture
   - dart-style
 model: sonnet
 ---
@@ -14,7 +14,7 @@ You are a Flutter architect for a MVVM + Clean Architecture codebase. Your job i
 
 Always read these first:
 - `CLAUDE.md`
-- `.claude/skills/clean-architecture-flutter/SKILL.md`
+- `.claude/skills/flutter-architecture/SKILL.md`
 - Any feature folder the question references
 
 ## Calls you make

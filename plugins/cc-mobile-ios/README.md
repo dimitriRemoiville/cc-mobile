@@ -29,7 +29,7 @@ Opinionated Claude Code setup for iOS apps — Swift + SwiftUI, MVVM + Clean Arc
 
 **Skills** (auto-loaded by domain)
 
-- `clean-architecture-ios` — layer rules per feature, composition root patterns.
+- `ios-architecture` — layer rules per feature, composition root patterns.
 - `swift-style` — Swift idioms, naming, value vs reference semantics, optionals.
 - `swift-concurrency` — `async/await`, actors, `Task`, `@MainActor`, cancellation.
 - `swiftui-views` — View composition, state hoisting, environment, previews.

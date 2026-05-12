@@ -113,7 +113,7 @@ Next steps you need to do manually:
    configure has run + the per-flavor JSON/plist drops are in place.
 ☐ [if drift] set DATABASE_PASSPHRASE via flutter_secure_storage on first launch.
 ☐ Replace the Feed and Profile placeholders with your first real features
-   (use `/new-feature <name>` or follow clean-architecture-flutter/SKILL.md).
+   (use `/new-feature <name>` or follow flutter-architecture/SKILL.md).
 ☐ Add new analytics events as sealed entries in lib/core/analytics/analytics_event.dart
    (don't sprinkle magic strings — the sealed type is the source of truth).
 

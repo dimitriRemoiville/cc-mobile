@@ -1,5 +1,5 @@
 ---
-name: clean-architecture
+name: android-architecture
 description: How MVVM + Clean Architecture is applied in this Kotlin + Compose codebase. Load when designing a new feature, deciding where code belongs, adding a repository or use case, or reviewing layer boundaries.
 ---
 

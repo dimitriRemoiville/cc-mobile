@@ -1336,7 +1336,7 @@ flutter test
 - [ ] Android flavors set up in `android/app/build.gradle.kts`.
 - [ ] iOS schemes + configurations set up in Xcode.
 - [ ] (If INCLUDE_FIREBASE) `flutterfire configure` run for both flavors. The `FirebaseAnalyticsTracker` no-ops at runtime if Firebase isn't initialized yet, so the app launches regardless; events start flowing once configure has run + the JSON/plist drops are in place.
-- [ ] Replace the Feed and Profile placeholders with your first real features (use `/new-feature <name>` or follow the conventions in `clean-architecture-flutter/SKILL.md`).
+- [ ] Replace the Feed and Profile placeholders with your first real features (use `/new-feature <name>` or follow the conventions in `flutter-architecture/SKILL.md`).
 - [ ] Add new analytics events as sealed entries in `lib/core/analytics/analytics_event.dart` — never magic strings.
 - [ ] Git initialized: `git init && git add . && git commit -m 'initial scaffold'`.
 

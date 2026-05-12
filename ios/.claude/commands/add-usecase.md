@@ -6,7 +6,7 @@ allowed-tools: Read, Write, Edit, Grep, Glob, Bash
 
 Add a new use case called **$ARGUMENTS**.
 
-1. Read `.claude/skills/clean-architecture-ios/SKILL.md` to confirm where use cases live in this project.
+1. Read `.claude/skills/ios-architecture/SKILL.md` to confirm where use cases live in this project.
 2. Decide: does this use case need a new repository method, or does it compose existing ones? If new, add it to the repository protocol and its `Live…` implementation first.
 3. Create the use case file in `<Feature>/Domain/UseCase/`. Prefer:
 

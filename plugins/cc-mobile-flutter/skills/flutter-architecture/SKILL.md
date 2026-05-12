@@ -1,5 +1,5 @@
 ---
-name: clean-architecture-flutter
+name: flutter-architecture
 description: How MVVM + Clean Architecture is applied in this Flutter codebase — feature layout, layer rules, repository contract, when to add a use case, error model. Load when designing a new feature, deciding where code belongs, adding a repository or use case, or reviewing layer boundaries.
 ---
 

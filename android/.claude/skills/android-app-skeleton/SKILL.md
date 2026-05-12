@@ -39,7 +39,7 @@ domain/    → Pure-Kotlin business logic (no android.* imports, by convention)
 data/      → Repository impls, Retrofit, Room, DataStore (knows frameworks)
 ```
 
-Why not start multi-module? The module tax (extra build.gradle.kts per module, explicit `project(":core:*")` wiring, slower first build) rarely pays off before you have real coupling pressure — a second app, a shared library, or a team boundary. Extracting `:core:domain` / `:core:data` later is mechanical once the pain is real. See `clean-architecture/SKILL.md` → "Module or package?".
+Why not start multi-module? The module tax (extra build.gradle.kts per module, explicit `project(":core:*")` wiring, slower first build) rarely pays off before you have real coupling pressure — a second app, a shared library, or a team boundary. Extracting `:core:domain` / `:core:data` later is mechanical once the pain is real. See `android-architecture/SKILL.md` → "Module or package?".
 
 ## Execution order
 

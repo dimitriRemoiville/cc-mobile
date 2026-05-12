@@ -5,7 +5,7 @@ tools: Read, Grep, Glob, Bash
 skills:
   - swift-style
   - swift-concurrency
-  - clean-architecture-ios
+  - ios-architecture
   - swiftui-views
 model: opus
 ---

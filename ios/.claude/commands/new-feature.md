@@ -8,7 +8,7 @@ You are scaffolding a new iOS feature called **$ARGUMENTS**.
 
 Follow this sequence — do not skip steps:
 
-1. **Load context.** Read `CLAUDE.md` and skim `.claude/skills/clean-architecture-ios/SKILL.md`, `.claude/skills/ios-di/SKILL.md`, and `.claude/skills/swiftui-views/SKILL.md`.
+1. **Load context.** Read `CLAUDE.md` and skim `.claude/skills/ios-architecture/SKILL.md`, `.claude/skills/ios-di/SKILL.md`, and `.claude/skills/swiftui-views/SKILL.md`.
 2. **Scan the existing codebase** for the nearest similar feature. Match its folder structure and naming. Do not introduce a new pattern unless there's a clear reason.
 3. **Produce a short plan** (5–10 lines) listing every file you'll create or touch. Confirm with the user before writing if the plan introduces a new SPM package or changes `Package.swift` / project settings.
 4. **Generate the feature** with this structure (adjust names):

@@ -29,7 +29,7 @@ Opinionated Claude Code setup for Android apps — Kotlin + Jetpack Compose, MVV
 
 **Skills** (auto-loaded by domain)
 
-- `clean-architecture` — layer rules per feature.
+- `android-architecture` — layer rules per feature.
 - `kotlin-style` — naming, nullability, coroutines, Flow, scope functions.
 - `compose-ui` — Material 3, state hoisting, recomposition, previews, accessibility.
 - `navigation-compose` — typed destinations, arguments, deep links.

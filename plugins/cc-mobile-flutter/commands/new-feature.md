@@ -10,7 +10,7 @@ Scaffold a new feature. `$ARGUMENTS` is the feature name in `snake_case` (e.g. `
 ## Before writing any code
 
 Read:
-- `.claude/skills/clean-architecture-flutter/SKILL.md`
+- `.claude/skills/flutter-architecture/SKILL.md`
 - `.claude/skills/bloc-state/SKILL.md`
 - `.claude/skills/get-it-di/SKILL.md`
 - `.claude/skills/widgets-and-screens/SKILL.md`

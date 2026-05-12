@@ -32,7 +32,7 @@ flutter/
     │   ├── flutter-tester.md           # unit / bloc / widget / golden tests
     │   └── flutter-build-expert.md     # pubspec, build_runner, lints, flavors
     ├── skills/
-    │   ├── clean-architecture-flutter/SKILL.md
+    │   ├── flutter-architecture/SKILL.md
     │   ├── dart-style/SKILL.md
     │   ├── widgets-and-screens/SKILL.md
     │   ├── bloc-state/SKILL.md

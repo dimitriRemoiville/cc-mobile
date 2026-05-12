@@ -4,7 +4,7 @@ description: Use PROACTIVELY after any substantive Kotlin or Android code change
 tools: Read, Grep, Glob, Bash
 skills:
   - kotlin-style
-  - clean-architecture
+  - android-architecture
   - compose-ui
 model: opus
 ---
