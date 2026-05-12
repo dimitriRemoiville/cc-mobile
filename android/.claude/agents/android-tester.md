@@ -13,7 +13,7 @@ You write tests that are fast, deterministic, and actually catch regressions.
 
 ## Stack you assume
 
-- **Unit:** JUnit 4 (or 5 if project configured), MockK, Truth or kotlin.test assertions.
+- **Unit:** JUnit 4 by default (so Android instrumentation stays first-class via `androidx.test.*` runners). JUnit 5 is fine in greenfield modules that don't need those runners — but don't propose it for instrumentation suites. MockK + Truth or kotlin.test assertions.
 - **Coroutines:** `kotlinx-coroutines-test` — `runTest { }`, `TestDispatcher`, `Dispatchers.setMain`.
 - **Flows:** Turbine (`flow.test { ... }`).
 - **Compose:** `createComposeRule()` for isolated composable tests, `createAndroidComposeRule<Activity>()` when navigation/Hilt is in play.

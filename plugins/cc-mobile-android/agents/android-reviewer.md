@@ -19,11 +19,11 @@ You are a senior Kotlin/Android reviewer. You read recently changed code and pro
 
 ## What you look for (in order)
 
-**Layer violations (highest priority).** Any `androidx.*`, `retrofit2.*`, or `androidx.room.*` import inside `domain/` is a bug. Any Compose import outside `presentation/` is a bug. Any direct repository call from a composable is a bug.
+**Layer violations (highest priority).** Any `androidx.*`, `retrofit2.*`, or `androidx.room.*` import inside `core/domain/` or `<feature>/domain/` is a bug. Any Compose import outside a `ui/` package (`core/ui/` or `<feature>/ui/`) is a bug. Any direct repository call from a composable is a bug. The project is **feature-first**: a global `ui/`, `domain/`, or `data/` next to features is also a layer-violation flag — the scaffold deliberately avoids that shape.
 
 **Null safety and error handling.**
 - `!!` is almost always a smell — suggest `?.let`, `requireNotNull`, or `Outcome`.
-- **Repository / use-case return types must be `Outcome<T>`** — never raw throws across a layer boundary, and never `Result<T>` on a `domain/` interface (`Result` would force `DomainError : Throwable`). Stdlib `Result` is allowed *inside* `data/` as scratch (`runCatching { ... }.toOutcome(::map)`); flag it anywhere else.
+- **Repository / use-case return types must be `Outcome<T>`** — never raw throws across a layer boundary, and never `Result<T>` on a `domain/` interface (`Result` would force `DomainError : Throwable`). Stdlib `Result` is allowed *inside* `data/` as scratch — but only when piped through the canonical `core/data/network/Outcomes.kt` adapter (`runCatching { ... }.toOutcome(::toDomainError)`). **Flag any open-coded `runCatching { ... }.fold(...)`** — that shape swallows `CancellationException` and silently breaks coroutine cancellation. Flag any `Result<T>` return type anywhere else.
 - `runCatching` is fine at the data-layer boundary; anywhere else it often hides bugs. Wherever it appears, ensure `CancellationException` is rethrown — `runCatching` swallows it by default.
 
 **Coroutines.**

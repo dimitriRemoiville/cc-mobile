@@ -11,33 +11,34 @@ Follow this sequence — do not skip steps:
 1. **Load context.** Read `CLAUDE.md` and skim `.claude/skills/android-architecture/SKILL.md`, `.claude/skills/hilt-di/SKILL.md`, and `.claude/skills/compose-ui/SKILL.md`.
 2. **Scan the existing codebase** for the nearest similar feature. Match its package structure, naming, and module conventions. Do not introduce a new pattern unless there's a clear reason.
 3. **Produce a short plan** (5–10 lines) listing every file you'll create or touch. Confirm with the user before writing if the plan introduces new modules or changes build files.
-4. **Generate the feature** with this structure (adjust names):
+4. **Generate the feature** with this **feature-first** structure (per `android-architecture` and `android-app-skeleton`; layer-first packaging is rejected here on purpose):
 
    ```
    <feature>/
    ├── data/
-   │   ├── remote/<Feature>Api.kt            # Retrofit
-   │   ├── remote/<Feature>Dto.kt            # DTOs
-   │   ├── mapper/<Feature>Mapper.kt
+   │   ├── remote/<Feature>Api.kt              # Retrofit interface
+   │   ├── remote/<Feature>Dto.kt              # DTOs (mapping fn colocated with the DTO)
    │   ├── repository/<Feature>RepositoryImpl.kt
-   │   └── di/<Feature>DataModule.kt         # Hilt module
+   │   └── di/<Feature>DataModule.kt           # Hilt module
    ├── domain/
    │   ├── model/<Feature>.kt
-   │   ├── repository/<Feature>Repository.kt
-   │   └── usecase/Get<Feature>UseCase.kt
-   └── presentation/
+   │   ├── repository/<Feature>Repository.kt   # interface; returns Outcome<T>
+   │   └── usecase/Get<Feature>UseCase.kt      # operator suspend fun invoke(...): Outcome<...>
+   └── ui/
        ├── <Feature>UiState.kt
        ├── <Feature>Action.kt
        ├── <Feature>Event.kt
        ├── <Feature>ViewModel.kt
-       ├── <Feature>Screen.kt                # stateless + Route wrapper
-       └── navigation/<Feature>NavGraph.kt
+       ├── <Feature>Screen.kt                  # stateless Screen + Route wrapper + Preview(s)
+       └── <Feature>Route.kt                   # @Serializable destination (one file per feature)
    ```
 
-5. **Wire navigation** — add the destination to the app's NavGraph. Don't leave the screen unreachable.
+   Promote `data/mapper/` to its own package only when several DTOs map to the same domain type — otherwise keep mapping functions colocated with the DTO. Use `core/data/network/Outcomes.kt` (`toOutcome` + `toDomainError`) for the `Result → Outcome` conversion in the repository implementation; never open-code `runCatching { ... }.fold(...)` (it swallows `CancellationException`).
+
+5. **Wire navigation** — register the feature's `@Serializable` route in `core/navigation/AppNavGraph.kt`. Don't leave the screen unreachable.
 6. **Tests.** Create at least:
-   - Unit test for the use case.
-   - Unit test for the mapper.
+   - Unit test for the use case (happy path + one error path returning `Outcome.Failure(DomainError.X())`).
+   - Unit test for the mapper (only if extracted into its own function — inline maps don't need standalone tests).
    - ViewModel test covering Loading → Success and an error path.
    - Compose UI test for the Screen's happy path.
 
@@ -48,7 +49,8 @@ Follow this sequence — do not skip steps:
 8. **Report** what was created, link each file, and list any TODOs you left behind.
 
 Hard rules:
-- No `androidx.*`, `retrofit2.*`, or `androidx.room.*` imports in `domain/`.
-- No Compose imports outside `presentation/`.
-- All new dependencies go in the version catalog.
-- Every new Composable has at least one `@Preview`.
+- **Domain-facing return types are `Outcome<T>`.** No `Result<T>` on a `domain/` interface, no raw throws across a layer boundary. `Result<T>` is allowed *inside* `<feature>/data/` as scratch (`runCatching { ... }.toOutcome(::toDomainError)`); flag it anywhere else.
+- **No `androidx.*`, `retrofit2.*`, or `androidx.room.*` imports** in `<feature>/domain/` or `core/domain/`.
+- **No Compose imports outside `ui/` packages** (`<feature>/ui/` or `core/ui/`).
+- **All new dependencies go in the version catalog.**
+- **Every new Composable has at least one `@Preview`** wrapped in `AppTheme`.

@@ -31,17 +31,29 @@ This file is the template registry. The `/init-android-app` command reads this s
 
 ## Layout
 
-Single Gradle module, `:app`. Clean Architecture layers live as packages under `app/src/main/java/{{PACKAGE_PATH}}/`:
+Single Gradle module, `:app`. **Feature-first** package layout — each feature is a top-level package containing the layers it actually needs (`ui/`, `domain/`, `data/`). Cross-feature plumbing lives under `core/`. This matches `android-architecture` and is what `/new-feature` and `/add-screen` produce.
 
 ```
-ui/        → Compose + ViewModels (knows Android & Compose)
-  ↓
-domain/    → Pure-Kotlin business logic (no android.* imports, by convention)
-  ↑
-data/      → Repository impls, Retrofit, Room, DataStore (knows frameworks)
+app/src/main/java/{{PACKAGE_PATH}}/
+├── {{APP_CLASS}}.kt                  # Application
+├── MainActivity.kt                   # single Activity host
+├── core/                             # cross-feature plumbing
+│   ├── domain/                       # Outcome, DomainError, analytics interface (framework-free)
+│   ├── data/                         # networking + analytics impls (knows frameworks)
+│   ├── ui/theme/                     # AppTheme, color schemes
+│   ├── ui/common/                    # shared composables (TrackScreen, ...)
+│   └── navigation/                   # AppNavGraph (top-level routes)
+├── home/ui/                          # the bottom-nav shell feature
+├── feed/ui/                          # tab feature
+└── profile/ui/                       # tab feature
 ```
 
-Why not start multi-module? The module tax (extra build.gradle.kts per module, explicit `project(":core:*")` wiring, slower first build) rarely pays off before you have real coupling pressure — a second app, a shared library, or a team boundary. Extracting `:core:domain` / `:core:data` later is mechanical once the pain is real. See `android-architecture/SKILL.md` → "Module or package?".
+Each new feature added later mirrors `home/`, `feed/`, `profile/` — `<feature>/{ui,domain,data}/` with only the layers it needs. The shell feature (`home/`) knows about its tab features; tab features don't know about each other.
+
+Why feature-first inside a single module?
+- **Code locality.** Everything for a screen — UI, state, repository, mapping — lives next to itself. New contributors find code by feature name, not by guessing which `data/` subfolder.
+- **Refactor pressure.** When a feature outgrows the package, promoting it to a `:feature:<name>` Gradle module is mechanical. Layer-first packages don't promote cleanly.
+- **Single-module tax stays low.** No extra `build.gradle.kts`, no `project(":core:*")` wiring, no slower first build until you actually want module-level isolation. See `android-architecture/SKILL.md` → "Module or package?".
 
 ## Execution order
 
@@ -49,12 +61,13 @@ Why not start multi-module? The module tax (extra build.gradle.kts per module, e
 2. Write `settings.gradle.kts`, root `build.gradle.kts`, `gradle.properties`, `gradle/libs.versions.toml`.
 3. Write `app/build.gradle.kts` (single module — it carries all runtime deps).
 4. Write `AndroidManifest.xml`, `strings.xml` (with tab labels), themes, launcher icons.
-5. Write `domain/` package — `Outcome`, `DomainError`, sample use case contract, **`analytics/AnalyticsTracker` interface + `AnalyticsEvent` sealed taxonomy** (always emitted; the analytics interface is part of the domain so use cases / VMs depend on the abstraction even when Firebase is absent).
-6. Write `data/` package — Retrofit/OkHttp factory + sample API + `RemoteDataSource`, Hilt `@Module` for networking, **`analytics/` module wiring `AnalyticsTracker` to `NoopAnalyticsTracker` (always) or `FirebaseAnalyticsTracker` (`INCLUDE_FIREBASE`)**. Add `data/persistence/` + `data/datastore/` behind their flags.
-7. Write UI — `{{APP_CLASS}}` Application, `MainActivity`, theme, **`HomeScreen` with bottom NavigationBar + nested NavHost (Feed + Profile tabs)**, each tab gets its own `*Screen.kt` + `*ViewModel.kt` + state, top-level nav graph with `Home` as start destination.
-8. Write `:app` tests — `domain/OutcomeMapTest.kt` and a `ui/home/feed/FeedViewModelTest.kt` that mocks `AnalyticsTracker` (demonstrates wiring + DI testability in one beat).
-9. **Compile + assemble + run unit tests.** Run `:app:compileDebugKotlin`, then **`:app:assembleDevDebug`** (the full assemble — this is the gate that catches missing Gradle plugins, unresolved deps, manifest merger errors), then `:app:testDebugUnitTest`. `compileDebugKotlin` alone is not sufficient.
-10. Emit manual setup notes (signing, flavor stubs, Firebase files).
+5. Write `core/domain/` — `Outcome`, `DomainError`, **`analytics/AnalyticsTracker` interface + `AnalyticsEvent` sealed taxonomy** (always emitted; the analytics interface is part of the domain so use cases / VMs depend on the abstraction even when Firebase is absent).
+6. Write `core/data/` — Retrofit/OkHttp factory + sample API + `RemoteDataSource`, **`Outcomes.kt` (canonical `Result<T>.toOutcome(...)` adapter + `toDomainError(...)` mapper)**, Hilt `@Module` for networking, **`analytics/` module wiring `AnalyticsTracker` to `NoopAnalyticsTracker` (always) or `FirebaseAnalyticsTracker` (`INCLUDE_FIREBASE`)**. Add `core/data/persistence/` + `core/data/datastore/` behind their flags.
+7. Write `core/ui/theme/AppTheme.kt`, `core/ui/common/TrackScreen.kt`, and `core/navigation/AppNavGraph.kt` (top-level nav with `Home` as start destination).
+8. Write the features — `{{APP_CLASS}}` Application, `MainActivity`, **`home/ui/HomeScreen` with bottom NavigationBar + nested NavHost (Feed + Profile tabs)**, `feed/ui/{FeedScreen,FeedViewModel}.kt`, `profile/ui/{ProfileScreen,ProfileViewModel}.kt`.
+9. Write `:app` tests — `core/domain/OutcomeMapTest.kt` and `feed/ui/FeedViewModelTest.kt` that mocks `AnalyticsTracker` (demonstrates wiring + DI testability in one beat).
+10. **Compile + assemble + run unit tests.** Run `:app:compileDebugKotlin`, then **`:app:assembleDevDebug`** (the full assemble — this is the gate that catches missing Gradle plugins, unresolved deps, manifest merger errors), then `:app:testDebugUnitTest`. `compileDebugKotlin` alone is not sufficient.
+11. Emit manual setup notes (signing, flavor stubs, Firebase files).
 
 ---
 
@@ -150,6 +163,7 @@ androidx-core-ktx = "<latest-stable>"
 retrofit = "<latest-stable>"               # >= 2.10 — bundles Square's kotlinx-serialization converter
 okhttp = "<latest-stable>"
 kotlinx-serialization = "<latest-stable>"
+coil = "<latest-stable>"                   # Coil 3.x — `io.coil-kt.coil3` group, Compose-first
 datastore = "<latest-stable>"
 room = "<latest-stable>"
 firebase-bom = "<latest-stable>"
@@ -191,6 +205,11 @@ okhttp-logging = { module = "com.squareup.okhttp3:logging-interceptor", version.
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinx-serialization" }
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
 kotlinx-coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "coroutines" }
+
+# Image loading — Coil 3 with Compose integration. The `coil-network-okhttp` artifact
+# is required to fetch http(s) URLs; without it Coil 3 silently no-ops on network images.
+coil-compose = { module = "io.coil-kt.coil3:coil-compose", version.ref = "coil" }
+coil-network-okhttp = { module = "io.coil-kt.coil3:coil-network-okhttp", version.ref = "coil" }
 
 # INCLUDE_ROOM
 room-runtime = { module = "androidx.room:room-runtime", version.ref = "room" }
@@ -409,6 +428,11 @@ dependencies {
     implementation(libs.okhttp.logging)
     implementation(libs.kotlinx.coroutines.android)
 
+    // Image loading (Coil 3). Pull both `coil-compose` and `coil-network-okhttp` —
+    // the network-okhttp module is what plugs Coil into OkHttp for http(s) URLs.
+    implementation(libs.coil.compose)
+    implementation(libs.coil.network.okhttp)
+
     // INCLUDE_ROOM
     implementation(libs.room.runtime)
     implementation(libs.room.ktx)
@@ -490,14 +514,14 @@ dependencies {
 
 ### `app/src/main/java/{{PACKAGE_PATH}}/{{APP_CLASS}}.kt`
 
-Single variant for Firebase and non-Firebase scaffolds. The `AnalyticsTracker` interface is always present (`data/analytics/AnalyticsModule` binds it to `FirebaseAnalyticsTracker` or `NoopAnalyticsTracker` based on the `INCLUDE_FIREBASE` flag), so this Application class doesn't change shape.
+Single variant for Firebase and non-Firebase scaffolds. The `AnalyticsTracker` interface is always present (`core/data/analytics/AnalyticsModule` binds it to `FirebaseAnalyticsTracker` or `NoopAnalyticsTracker` based on the `INCLUDE_FIREBASE` flag), so this Application class doesn't change shape.
 
 ```kotlin
 package {{PACKAGE_ID}}
 
 import android.app.Application
 import dagger.hilt.android.HiltAndroidApp
-import {{PACKAGE_ID}}.domain.analytics.AnalyticsTracker
+import {{PACKAGE_ID}}.core.domain.analytics.AnalyticsTracker
 import javax.inject.Inject
 
 @HiltAndroidApp
@@ -522,8 +546,8 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import {{PACKAGE_ID}}.navigation.AppNavGraph
-import {{PACKAGE_ID}}.ui.theme.AppTheme
+import {{PACKAGE_ID}}.core.navigation.AppNavGraph
+import {{PACKAGE_ID}}.core.ui.theme.AppTheme
 import dagger.hilt.android.AndroidEntryPoint
 
 @AndroidEntryPoint
@@ -540,12 +564,12 @@ class MainActivity : ComponentActivity() {
 }
 ```
 
-### `app/src/main/java/{{PACKAGE_PATH}}/ui/theme/AppTheme.kt`
+### `app/src/main/java/{{PACKAGE_PATH}}/core/ui/theme/AppTheme.kt`
 
 Dynamic color is API 31+ only. Without the guard the app crashes at runtime on every device below Android 12 — roughly the bottom 10% of the install base. The fallback uses Material 3 baseline schemes; swap for a tonal palette of your brand colors when you have one.
 
 ```kotlin
-package {{PACKAGE_ID}}.ui.theme
+package {{PACKAGE_ID}}.core.ui.theme
 
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -570,19 +594,19 @@ fun AppTheme(content: @Composable () -> Unit) {
 }
 ```
 
-### `app/src/main/java/{{PACKAGE_PATH}}/navigation/AppNavGraph.kt`
+### `app/src/main/java/{{PACKAGE_PATH}}/core/navigation/AppNavGraph.kt`
 
 Top-level nav has a single `Home` destination. The bottom-nav tabs are nested *inside* `HomeScreen` (its own `NavHost`), not flattened here — that keeps the bottom bar scoped to the Home graph and makes deep-link routing trivial when you add real auth/onboarding/settings destinations later.
 
 ```kotlin
-package {{PACKAGE_ID}}.navigation
+package {{PACKAGE_ID}}.core.navigation
 
 import androidx.compose.runtime.Composable
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import kotlinx.serialization.Serializable
-import {{PACKAGE_ID}}.ui.home.HomeScreen
+import {{PACKAGE_ID}}.home.ui.HomeScreen
 
 @Serializable data object Home
 
@@ -595,12 +619,12 @@ fun AppNavGraph() {
 }
 ```
 
-### `app/src/main/java/{{PACKAGE_PATH}}/ui/home/HomeScreen.kt`
+### `app/src/main/java/{{PACKAGE_PATH}}/home/ui/HomeScreen.kt`
 
-Hosts the bottom `NavigationBar` and the *nested* tab `NavHost`. Tabs are typed `@Serializable` destinations. Selection is computed from the current back-stack entry via `NavDestination.hasRoute(KClass)` — no string comparisons, no hand-rolled selected-index state.
+Hosts the bottom `NavigationBar` and the *nested* tab `NavHost`. Tabs are typed `@Serializable` destinations. Selection is computed from the current back-stack entry via `NavDestination.hasRoute(KClass)` — no string comparisons, no hand-rolled selected-index state. The shell feature is the one place that knows about its tab features (`feed/`, `profile/`); tab features don't know about each other.
 
 ```kotlin
-package {{PACKAGE_ID}}.ui.home
+package {{PACKAGE_ID}}.home.ui
 
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
@@ -624,8 +648,8 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import kotlinx.serialization.Serializable
 import {{PACKAGE_ID}}.R
-import {{PACKAGE_ID}}.ui.home.feed.FeedScreen
-import {{PACKAGE_ID}}.ui.home.profile.ProfileScreen
+import {{PACKAGE_ID}}.feed.ui.FeedScreen
+import {{PACKAGE_ID}}.profile.ui.ProfileScreen
 
 @Serializable sealed interface HomeRoute {
     @Serializable data object Feed : HomeRoute
@@ -682,12 +706,12 @@ fun HomeScreen() {
 }
 ```
 
-### `app/src/main/java/{{PACKAGE_PATH}}/ui/home/feed/FeedScreen.kt`
+### `app/src/main/java/{{PACKAGE_PATH}}/feed/ui/FeedScreen.kt`
 
 Stateless composable + state holder pattern. The VM owns state; the composable observes via `collectAsStateWithLifecycle`.
 
 ```kotlin
-package {{PACKAGE_ID}}.ui.home.feed
+package {{PACKAGE_ID}}.feed.ui
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -708,20 +732,20 @@ fun FeedScreen(vm: FeedViewModel = hiltViewModel()) {
 }
 ```
 
-### `app/src/main/java/{{PACKAGE_PATH}}/ui/home/feed/FeedViewModel.kt`
+### `app/src/main/java/{{PACKAGE_PATH}}/feed/ui/FeedViewModel.kt`
 
 Two responsibilities here demonstrated together: (1) MVVM `StateFlow<UiState>`, (2) Clean Architecture — depends only on the **`AnalyticsTracker` domain interface**, never on Firebase directly. Every screen-viewed event is a sealed `AnalyticsEvent` constant, not a magic string.
 
 ```kotlin
-package {{PACKAGE_ID}}.ui.home.feed
+package {{PACKAGE_ID}}.feed.ui
 
 import androidx.lifecycle.ViewModel
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import {{PACKAGE_ID}}.domain.analytics.AnalyticsEvent
-import {{PACKAGE_ID}}.domain.analytics.AnalyticsTracker
+import {{PACKAGE_ID}}.core.domain.analytics.AnalyticsEvent
+import {{PACKAGE_ID}}.core.domain.analytics.AnalyticsTracker
 import javax.inject.Inject
 
 data class FeedState(val items: List<String> = emptyList())
@@ -739,10 +763,10 @@ class FeedViewModel @Inject constructor(
 }
 ```
 
-### `app/src/main/java/{{PACKAGE_PATH}}/ui/home/profile/ProfileScreen.kt`
+### `app/src/main/java/{{PACKAGE_PATH}}/profile/ui/ProfileScreen.kt`
 
 ```kotlin
-package {{PACKAGE_ID}}.ui.home.profile
+package {{PACKAGE_ID}}.profile.ui
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -763,18 +787,18 @@ fun ProfileScreen(vm: ProfileViewModel = hiltViewModel()) {
 }
 ```
 
-### `app/src/main/java/{{PACKAGE_PATH}}/ui/home/profile/ProfileViewModel.kt`
+### `app/src/main/java/{{PACKAGE_PATH}}/profile/ui/ProfileViewModel.kt`
 
 ```kotlin
-package {{PACKAGE_ID}}.ui.home.profile
+package {{PACKAGE_ID}}.profile.ui
 
 import androidx.lifecycle.ViewModel
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import {{PACKAGE_ID}}.domain.analytics.AnalyticsEvent
-import {{PACKAGE_ID}}.domain.analytics.AnalyticsTracker
+import {{PACKAGE_ID}}.core.domain.analytics.AnalyticsEvent
+import {{PACKAGE_ID}}.core.domain.analytics.AnalyticsTracker
 import javax.inject.Inject
 
 data class ProfileState(val userName: String = "guest")
@@ -792,12 +816,12 @@ class ProfileViewModel @Inject constructor(
 }
 ```
 
-### `app/src/test/java/{{PACKAGE_PATH}}/ui/home/feed/FeedViewModelTest.kt`
+### `app/src/test/java/{{PACKAGE_PATH}}/feed/ui/FeedViewModelTest.kt`
 
 Plain JUnit 4 + MockK + Turbine — no Robolectric. The test verifies *both* (a) the initial UiState shape and (b) that the VM tracks the right event on init, which is exactly the kind of regression the analytics layer is meant to catch.
 
 ```kotlin
-package {{PACKAGE_ID}}.ui.home.feed
+package {{PACKAGE_ID}}.feed.ui
 
 import app.cash.turbine.test
 import io.mockk.mockk
@@ -805,8 +829,8 @@ import io.mockk.verify
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Test
-import {{PACKAGE_ID}}.domain.analytics.AnalyticsEvent
-import {{PACKAGE_ID}}.domain.analytics.AnalyticsTracker
+import {{PACKAGE_ID}}.core.domain.analytics.AnalyticsEvent
+import {{PACKAGE_ID}}.core.domain.analytics.AnalyticsTracker
 
 class FeedViewModelTest {
     @Test
@@ -830,14 +854,14 @@ class FeedViewModelTest {
 
 ---
 
-## `domain/` package
+## `core/domain/` package
 
-Pure-Kotlin business logic. No `android.*` imports — keep this package framework-free by convention so it stays unit-testable without Robolectric, and so extracting it to a `:core:domain` module later is mechanical.
+Pure-Kotlin business logic. No `android.*` imports — keep these packages framework-free by convention so they stay unit-testable without Robolectric, and so extracting them to a `:core:domain` module later is mechanical.
 
-### `app/src/main/java/{{PACKAGE_PATH}}/domain/Outcome.kt`
+### `app/src/main/java/{{PACKAGE_PATH}}/core/domain/Outcome.kt`
 
 ```kotlin
-package {{PACKAGE_ID}}.domain
+package {{PACKAGE_ID}}.core.domain
 
 sealed interface Outcome<out T> {
     data class Success<T>(val value: T) : Outcome<T>
@@ -850,10 +874,10 @@ inline fun <T, R> Outcome<T>.map(block: (T) -> R): Outcome<R> = when (this) {
 }
 ```
 
-### `app/src/main/java/{{PACKAGE_PATH}}/domain/DomainError.kt`
+### `app/src/main/java/{{PACKAGE_PATH}}/core/domain/DomainError.kt`
 
 ```kotlin
-package {{PACKAGE_ID}}.domain
+package {{PACKAGE_ID}}.core.domain
 
 sealed class DomainError(open val cause: Throwable? = null) {
     data class Network(override val cause: Throwable? = null) : DomainError(cause)
@@ -864,12 +888,12 @@ sealed class DomainError(open val cause: Throwable? = null) {
 }
 ```
 
-### `app/src/test/java/{{PACKAGE_PATH}}/domain/OutcomeMapTest.kt`
+### `app/src/test/java/{{PACKAGE_PATH}}/core/domain/OutcomeMapTest.kt`
 
-A 10-line test anchors the convention: `domain/` is plain Kotlin, framework-free, fast to test. Every new use case should have a sibling under `app/src/test/java/{{PACKAGE_PATH}}/domain/`.
+A 10-line test anchors the convention: `core/domain/` is plain Kotlin, framework-free, fast to test. Every new use case should have a sibling under `app/src/test/java/{{PACKAGE_PATH}}/<feature>/domain/`.
 
 ```kotlin
-package {{PACKAGE_ID}}.domain
+package {{PACKAGE_ID}}.core.domain
 
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -889,16 +913,16 @@ class OutcomeMapTest {
 }
 ```
 
-### Analytics: `domain/analytics/`
+### Analytics: `core/domain/analytics/`
 
-The analytics interface is part of the **domain** layer so ViewModels and use cases depend on the abstraction, not on Firebase. The `data/` layer chooses the concrete implementation (Firebase or no-op) at wire-up time. This is the same pattern as repositories: the contract lives in `domain/`, the framework-bound code stays in `data/`. Without this split a `FeedViewModel` would import `com.google.firebase.*`, which leaks framework concerns into the layer that's supposed to be framework-free.
+The analytics interface is part of the **core/domain** layer so ViewModels and use cases depend on the abstraction, not on Firebase. The `core/data/` layer chooses the concrete implementation (Firebase or no-op) at wire-up time. This is the same pattern as repositories: the contract lives in `core/domain/`, the framework-bound code stays in `core/data/`. Without this split a `FeedViewModel` would import `com.google.firebase.*`, which leaks framework concerns into the layer that's supposed to be framework-free.
 
 The event taxonomy is a sealed type, not a string. Magic strings sprinkled across screens are how analytics dashboards quietly drift; a sealed type forces every new event to land in one place that's grep-able and reviewable.
 
-#### `app/src/main/java/{{PACKAGE_PATH}}/domain/analytics/AnalyticsTracker.kt`
+#### `app/src/main/java/{{PACKAGE_PATH}}/core/domain/analytics/AnalyticsTracker.kt`
 
 ```kotlin
-package {{PACKAGE_ID}}.domain.analytics
+package {{PACKAGE_ID}}.core.domain.analytics
 
 interface AnalyticsTracker {
     fun track(event: AnalyticsEvent)
@@ -908,10 +932,10 @@ interface AnalyticsTracker {
 }
 ```
 
-#### `app/src/main/java/{{PACKAGE_PATH}}/domain/analytics/AnalyticsEvent.kt`
+#### `app/src/main/java/{{PACKAGE_PATH}}/core/domain/analytics/AnalyticsEvent.kt`
 
 ```kotlin
-package {{PACKAGE_ID}}.domain.analytics
+package {{PACKAGE_ID}}.core.domain.analytics
 
 /**
  * Add events here. The sealed type is the source of truth — implementations
@@ -943,14 +967,14 @@ sealed class AnalyticsEvent(
 
 ---
 
-## `data/` package
+## `core/data/` package
 
-Repository implementations + framework adapters (Retrofit, Room, DataStore). Depends on `domain/`; `domain/` never depends on it. All Retrofit / Room / DataStore deps already live in `app/build.gradle.kts` above — no separate module build file.
+Repository implementations + framework adapters (Retrofit, Room, DataStore). Depends on `core/domain/`; `core/domain/` never depends on it. All Retrofit / Room / DataStore deps already live in `app/build.gradle.kts` above — no separate module build file.
 
-### `app/src/main/java/{{PACKAGE_PATH}}/data/network/ApiClientFactory.kt`
+### `app/src/main/java/{{PACKAGE_PATH}}/core/data/network/ApiClientFactory.kt`
 
 ```kotlin
-package {{PACKAGE_ID}}.data.network
+package {{PACKAGE_ID}}.core.data.network
 
 import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType
@@ -981,12 +1005,12 @@ object ApiClientFactory {
 }
 ```
 
-### `app/src/main/java/{{PACKAGE_PATH}}/data/network/SampleApi.kt`
+### `app/src/main/java/{{PACKAGE_PATH}}/core/data/network/SampleApi.kt`
 
 Minimal Retrofit service + DTO so the scaffold demonstrates the full networking shape (interface + suspend fun + `@Serializable` DTO). Replace with real endpoints; the `ping` call is just an anchor.
 
 ```kotlin
-package {{PACKAGE_ID}}.data.network
+package {{PACKAGE_ID}}.core.data.network
 
 import kotlinx.serialization.Serializable
 import retrofit2.http.GET
@@ -1000,46 +1024,66 @@ interface SampleApi {
 data class PingDto(val ok: Boolean, val timestamp: Long)
 ```
 
-### `app/src/main/java/{{PACKAGE_PATH}}/data/network/RemoteDataSource.kt`
+### `app/src/main/java/{{PACKAGE_PATH}}/core/data/network/Outcomes.kt`
 
-Thin wrapper that maps Retrofit DTOs to `domain/` types. Repository implementations consume `RemoteDataSource`, never `SampleApi` directly — this is where you map exceptions to `DomainError`.
+The **canonical adapter** between Kotlin's stdlib `Result<T>` and the project's `Outcome<T>`. Every repository / data-source that wants to lift `runCatching { ... }` into a domain `Outcome` goes through `toOutcome(...)`. Two reasons it has to live here, not get re-coded at each call site:
+
+1. **`runCatching` swallows `CancellationException`** — open-coding `runCatching { ... }.fold(...)` silently breaks coroutine cancellation. `toOutcome` rethrows `CancellationException` so cancellation stays cooperative.
+2. **One mapping table.** `toDomainError(...)` is the single place that translates `IOException` / `HttpException` codes into `DomainError`. Every new error category lands here once, not at every repository.
 
 ```kotlin
-package {{PACKAGE_ID}}.data.network
+package {{PACKAGE_ID}}.core.data.network
 
-import {{PACKAGE_ID}}.domain.DomainError
-import {{PACKAGE_ID}}.domain.Outcome
+import kotlinx.coroutines.CancellationException
 import retrofit2.HttpException
+import {{PACKAGE_ID}}.core.domain.DomainError
+import {{PACKAGE_ID}}.core.domain.Outcome
 import java.io.IOException
+
+inline fun <T> Result<T>.toOutcome(mapError: (Throwable) -> DomainError): Outcome<T> =
+    fold(
+        onSuccess = { Outcome.Success(it) },
+        onFailure = { t ->
+            // CancellationException must propagate — runCatching swallows it.
+            if (t is CancellationException) throw t
+            Outcome.Failure(mapError(t))
+        },
+    )
+
+fun toDomainError(t: Throwable): DomainError = when (t) {
+    is IOException -> DomainError.Network(t)
+    is HttpException -> when (val code = t.code()) {
+        401 -> DomainError.Unauthorized(t)
+        404 -> DomainError.NotFound(t)
+        in 500..599 -> DomainError.Server(code, t)
+        else -> DomainError.Unknown(t)
+    }
+    else -> DomainError.Unknown(t)
+}
+```
+
+### `app/src/main/java/{{PACKAGE_PATH}}/core/data/network/RemoteDataSource.kt`
+
+Thin wrapper that maps Retrofit DTOs to `core/domain/` types. Repository implementations consume `RemoteDataSource`, never `SampleApi` directly. The exception-to-`DomainError` mapping lives in `Outcomes.kt` (one place); this class just lifts the call through `toOutcome`.
+
+```kotlin
+package {{PACKAGE_ID}}.core.data.network
+
+import {{PACKAGE_ID}}.core.domain.Outcome
 import javax.inject.Inject
 
 class RemoteDataSource @Inject constructor(
     private val api: SampleApi,
 ) {
-    suspend fun ping(): Outcome<Boolean> = runCatching { api.ping().ok }
-        .fold(
-            onSuccess = { Outcome.Success(it) },
-            onFailure = { e ->
-                Outcome.Failure(
-                    when (e) {
-                        is IOException -> DomainError.Network(e)
-                        is HttpException -> when (e.code()) {
-                            401 -> DomainError.Unauthorized(e)
-                            404 -> DomainError.NotFound(e)
-                            else -> DomainError.Server(e.code(), e)
-                        }
-                        else -> DomainError.Unknown(e)
-                    }
-                )
-            }
-        )
+    suspend fun ping(): Outcome<Boolean> =
+        runCatching { api.ping().ok }.toOutcome(::toDomainError)
 }
 ```
 
-### `app/src/main/java/{{PACKAGE_PATH}}/data/di/DataModule.kt`
+### `app/src/main/java/{{PACKAGE_PATH}}/core/data/network/di/DataModule.kt`
 
 ```kotlin
-package {{PACKAGE_ID}}.data.di
+package {{PACKAGE_ID}}.core.data.network.di
 
 import dagger.Module
 import dagger.Provides
@@ -1048,8 +1092,8 @@ import dagger.hilt.components.SingletonComponent
 import retrofit2.Retrofit
 import retrofit2.create
 import {{PACKAGE_ID}}.BuildConfig
-import {{PACKAGE_ID}}.data.network.ApiClientFactory
-import {{PACKAGE_ID}}.data.network.SampleApi
+import {{PACKAGE_ID}}.core.data.network.ApiClientFactory
+import {{PACKAGE_ID}}.core.data.network.SampleApi
 import javax.inject.Singleton
 
 @Module
@@ -1065,20 +1109,20 @@ object DataModule {
 
 `BuildConfig.API_BASE_URL` is wired per flavor in `app/build.gradle.kts` (`buildConfigField("String", "API_BASE_URL", ...)`). When flavors are off, the same field lives in `defaultConfig` instead — see the conditional in the build script template.
 
-### Analytics: `data/analytics/`
+### Analytics: `core/data/analytics/`
 
 The implementations of `AnalyticsTracker`. Two impls always exist; the Hilt module wires the right one based on `INCLUDE_FIREBASE`.
 
 - `NoopAnalyticsTracker` — always emitted. Used when `INCLUDE_FIREBASE=false`, also handy in instrumentation tests so a real Firebase backend isn't required.
 - `FirebaseAnalyticsTracker` — emitted only when `INCLUDE_FIREBASE=true`. Routes events through the Firebase SDK.
 
-#### `app/src/main/java/{{PACKAGE_PATH}}/data/analytics/NoopAnalyticsTracker.kt` *(always emit)*
+#### `app/src/main/java/{{PACKAGE_PATH}}/core/data/analytics/NoopAnalyticsTracker.kt` *(always emit)*
 
 ```kotlin
-package {{PACKAGE_ID}}.data.analytics
+package {{PACKAGE_ID}}.core.data.analytics
 
-import {{PACKAGE_ID}}.domain.analytics.AnalyticsEvent
-import {{PACKAGE_ID}}.domain.analytics.AnalyticsTracker
+import {{PACKAGE_ID}}.core.domain.analytics.AnalyticsEvent
+import {{PACKAGE_ID}}.core.domain.analytics.AnalyticsTracker
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -1090,14 +1134,14 @@ class NoopAnalyticsTracker @Inject constructor() : AnalyticsTracker {
 }
 ```
 
-#### `app/src/main/java/{{PACKAGE_PATH}}/data/analytics/FirebaseAnalyticsTracker.kt` *(INCLUDE_FIREBASE only)*
+#### `app/src/main/java/{{PACKAGE_PATH}}/core/data/analytics/FirebaseAnalyticsTracker.kt` *(INCLUDE_FIREBASE only)*
 
 The mapping `AnalyticsEvent → Firebase logEvent` lives here, never in a ViewModel. If you ever switch backends (Mixpanel, Amplitude), only this file changes — domain + UI stay untouched. `paramsToBundle` deliberately handles only primitives: every analytics backend supports them and any caller passing something exotic deserves the compile-time push to flatten it.
 
 **Critical: the impl is defensive against an uninitialized FirebaseApp.** The build-time `tasks.matching { processGoogleServices }.onlyIf { ... }` guard lets the project compile and install before `google-services.json` arrives — but `FirebaseInitProvider` only runs when the JSON is present, so `Firebase.analytics` would otherwise crash with `Default FirebaseApp is not initialized in this process` the first time the Application calls `setCollectionEnabled` on cold start. The `isFirebaseAvailable` check at every call site silently no-ops until the JSON is dropped in; once it is, the same impl starts emitting events without a code change.
 
 ```kotlin
-package {{PACKAGE_ID}}.data.analytics
+package {{PACKAGE_ID}}.core.data.analytics
 
 import android.content.Context
 import android.os.Bundle
@@ -1107,8 +1151,8 @@ import com.google.firebase.analytics.FirebaseAnalytics
 import com.google.firebase.analytics.analytics
 import com.google.firebase.crashlytics.crashlytics
 import dagger.hilt.android.qualifiers.ApplicationContext
-import {{PACKAGE_ID}}.domain.analytics.AnalyticsEvent
-import {{PACKAGE_ID}}.domain.analytics.AnalyticsTracker
+import {{PACKAGE_ID}}.core.domain.analytics.AnalyticsEvent
+import {{PACKAGE_ID}}.core.domain.analytics.AnalyticsTracker
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -1152,20 +1196,20 @@ class FirebaseAnalyticsTracker @Inject constructor(
 }
 ```
 
-#### `app/src/main/java/{{PACKAGE_PATH}}/data/analytics/AnalyticsModule.kt`
+#### `app/src/main/java/{{PACKAGE_PATH}}/core/data/analytics/AnalyticsModule.kt`
 
 One `@Binds` chooses the impl. Without Firebase, the no-op is bound — every VM still works, just no events leave the device.
 
 *Variant when `INCLUDE_FIREBASE=true`:*
 
 ```kotlin
-package {{PACKAGE_ID}}.data.analytics
+package {{PACKAGE_ID}}.core.data.analytics
 
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
-import {{PACKAGE_ID}}.domain.analytics.AnalyticsTracker
+import {{PACKAGE_ID}}.core.domain.analytics.AnalyticsTracker
 
 @Module
 @InstallIn(SingletonComponent::class)
@@ -1178,13 +1222,13 @@ abstract class AnalyticsModule {
 *Variant when `INCLUDE_FIREBASE=false`:*
 
 ```kotlin
-package {{PACKAGE_ID}}.data.analytics
+package {{PACKAGE_ID}}.core.data.analytics
 
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
-import {{PACKAGE_ID}}.domain.analytics.AnalyticsTracker
+import {{PACKAGE_ID}}.core.domain.analytics.AnalyticsTracker
 
 @Module
 @InstallIn(SingletonComponent::class)
@@ -1198,13 +1242,15 @@ abstract class AnalyticsModule {
 
 Most screen-viewed events should fire once per entry, not on every recomposition. A small helper makes the call site one line and keeps `LaunchedEffect(Unit)` boilerplate out of every screen.
 
+`app/src/main/java/{{PACKAGE_PATH}}/core/ui/common/TrackScreen.kt`:
+
 ```kotlin
-package {{PACKAGE_ID}}.ui.common
+package {{PACKAGE_ID}}.core.ui.common
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import {{PACKAGE_ID}}.domain.analytics.AnalyticsEvent
-import {{PACKAGE_ID}}.domain.analytics.AnalyticsTracker
+import {{PACKAGE_ID}}.core.domain.analytics.AnalyticsEvent
+import {{PACKAGE_ID}}.core.domain.analytics.AnalyticsTracker
 
 /** Fires once when this composable enters composition. */
 @Composable
@@ -1221,10 +1267,12 @@ fun TrackScreen(tracker: AnalyticsTracker, event: AnalyticsEvent) {
 
 Only emit when `INCLUDE_ROOM` is true. The Room dependencies are already in `app/build.gradle.kts` above (under the `// INCLUDE_ROOM` block).
 
-### `app/src/main/java/{{PACKAGE_PATH}}/data/persistence/AppDatabase.kt`
+Persistence is shared infrastructure, so it lives under `core/data/persistence/`. Per-feature DAOs/entities can be promoted to `<feature>/data/persistence/` later if a feature owns its own table.
+
+### `app/src/main/java/{{PACKAGE_PATH}}/core/data/persistence/AppDatabase.kt`
 
 ```kotlin
-package {{PACKAGE_ID}}.data.persistence
+package {{PACKAGE_ID}}.core.data.persistence
 
 import androidx.room.Database
 import androidx.room.RoomDatabase
@@ -1239,10 +1287,10 @@ abstract class AppDatabase : RoomDatabase() {
 }
 ```
 
-### `app/src/main/java/{{PACKAGE_PATH}}/data/persistence/SampleEntity.kt`
+### `app/src/main/java/{{PACKAGE_PATH}}/core/data/persistence/SampleEntity.kt`
 
 ```kotlin
-package {{PACKAGE_ID}}.data.persistence
+package {{PACKAGE_ID}}.core.data.persistence
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
@@ -1254,10 +1302,10 @@ data class SampleEntity(
 )
 ```
 
-### `app/src/main/java/{{PACKAGE_PATH}}/data/persistence/SampleDao.kt`
+### `app/src/main/java/{{PACKAGE_PATH}}/core/data/persistence/SampleDao.kt`
 
 ```kotlin
-package {{PACKAGE_ID}}.data.persistence
+package {{PACKAGE_ID}}.core.data.persistence
 
 import androidx.room.Dao
 import androidx.room.Insert
@@ -1282,10 +1330,10 @@ ksp { arg("room.schemaLocation", "$projectDir/schemas") }
 
 ## INCLUDE_DATASTORE additions
 
-### `app/src/main/java/{{PACKAGE_PATH}}/data/datastore/AppPreferences.kt`
+### `app/src/main/java/{{PACKAGE_PATH}}/core/data/datastore/AppPreferences.kt`
 
 ```kotlin
-package {{PACKAGE_ID}}.data.datastore
+package {{PACKAGE_ID}}.core.data.datastore
 
 import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
@@ -1310,7 +1358,7 @@ class AppPreferences(private val context: Context) {
 
 ## INCLUDE_FIREBASE additions
 
-Firebase auto-initializes via `FirebaseInitProvider` as soon as a `google-services.json` is present for the current flavor. The collection toggle in `Application.onCreate()` and the actual `logEvent` calls live in `data/analytics/FirebaseAnalyticsTracker` — see the **Analytics** section above. The Application class itself is the unified template (no Firebase-specific variant); it talks to `AnalyticsTracker` (the domain interface) which Hilt resolves to `FirebaseAnalyticsTracker` when this flag is on.
+Firebase auto-initializes via `FirebaseInitProvider` as soon as a `google-services.json` is present for the current flavor. The collection toggle in `Application.onCreate()` and the actual `logEvent` calls live in `core/data/analytics/FirebaseAnalyticsTracker` — see the **Analytics** section above. The Application class itself is the unified template (no Firebase-specific variant); it talks to `AnalyticsTracker` (the domain interface) which Hilt resolves to `FirebaseAnalyticsTracker` when this flag is on.
 
 The Firebase artifacts in `app/build.gradle.kts` use `com.google.firebase:firebase-crashlytics` / `firebase-analytics` (no `-ktx` suffix) — the `*-ktx` variants have been empty stubs since Firebase BOM 32.5.
 
@@ -1322,10 +1370,12 @@ Drop `google-services.json` into `app/src/dev/` and `app/src/prod/`. Never commi
 
 ## Hard rules
 
+- **Feature-first packaging.** Each feature is a top-level package containing only the layers it needs (`<feature>/{ui,domain,data}/`). Cross-feature plumbing lives under `core/`. Don't grow a global `ui/`, `domain/`, or `data/` next to features — that's the layer-first shape this scaffold deliberately avoids.
 - **No `kapt`.** KSP only (Hilt 2.48+, Room 2.6+ all support KSP).
 - **No string routes.** Navigation Compose 2.8+ typed destinations via `@Serializable` + `kotlinx-serialization` plugin.
-- **Keep the `domain/` package Android-free.** No `android.*` imports, no Compose, no Retrofit, no Room — only Kotlin stdlib + coroutines. Enforced by review until/unless you extract `:core:domain` (a `kotlin.jvm` module would enforce it mechanically).
+- **Keep `core/domain/` and `<feature>/domain/` Android-free.** No `android.*` imports, no Compose, no Retrofit, no Room — only Kotlin stdlib + coroutines. Enforced by review until/unless you extract `:core:domain` / `:feature:<name>:domain` (a `kotlin.jvm` module would enforce it mechanically).
 - **`ui/` consumes `domain/` interfaces, never `data/` types.** Repository implementations stay behind interfaces declared in `domain/`. Cross the boundary through use cases, not by reaching into `data/` directly.
+- **One `Outcomes.kt` adapter, one `toDomainError(...)` mapper.** Every `runCatching { ... }` boundary call goes through `Result<T>.toOutcome(::toDomainError)`. Open-coding `runCatching { ... }.fold(...)` swallows `CancellationException` and silently breaks coroutine cancellation — see `core/data/network/Outcomes.kt` for the canonical implementation.
 - **Compose BOM is the single source of truth** for Compose versions. Never pin individual Compose libs.
 - **Apply `kotlin.compose` (the standalone Gradle plugin) on every module with `buildFeatures.compose = true`.** The plugin alias lives in the catalog as `kotlin-compose` and rides the `kotlin` version ref. Without the alias, the Kotlin compiler aborts with `Compose Compiler is required, but not applied`. Don't pin Compose Compiler separately.
 - **Version catalog is the single source of truth** for all versions. Never inline `"2.1.0"` in a module `build.gradle.kts`.

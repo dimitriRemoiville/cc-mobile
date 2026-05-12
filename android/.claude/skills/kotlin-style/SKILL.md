@@ -52,7 +52,7 @@ Don't nest them. If you're writing `let { apply { run { ... } } }`, split into f
 
 ## Error handling
 
-- **Canonical contract: `Outcome<T>` + `DomainError`.** Business operations cross layer boundaries as `Outcome`, never as `Result<T>` and never as raw `throw`. The two types are defined once in `domain/Outcome.kt` and `domain/DomainError.kt` (see `android-app-skeleton`); every use case, repository method, and ViewModel that needs a typed failure goes through them.
+- **Canonical contract: `Outcome<T>` + `DomainError`.** Business operations cross layer boundaries as `Outcome`, never as `Result<T>` and never as raw `throw`. The two types are defined once in `core/domain/Outcome.kt` and `core/domain/DomainError.kt` (see `android-app-skeleton`); every use case, repository method, and ViewModel that needs a typed failure goes through them. The `Result → Outcome` adapter (`core/data/network/Outcomes.kt`) is the only place that touches `runCatching` directly — see "Error handling" in `retrofit-networking`.
   ```kotlin
   sealed interface Outcome<out T> {
       data class Success<T>(val value: T) : Outcome<T>

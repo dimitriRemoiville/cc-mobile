@@ -21,25 +21,32 @@ A native Android application written in **Kotlin** with **Jetpack Compose** as t
 
 ## Module / package layout
 
-A typical feature module or package looks like:
+The project is **feature-first** — each feature is a top-level package containing only the layers it actually needs. Cross-feature plumbing (network factory, error types, analytics interface, theme, top-level nav) lives under `core/`. See `.claude/skills/android-app-skeleton/SKILL.md` for the canonical layout the scaffold emits.
 
 ```
-feature_x/
-├── data/
-│   ├── remote/      # Retrofit service + DTOs
-│   ├── local/       # Room DAO + entities
-│   ├── mapper/      # DTO/Entity <-> Domain model
-│   └── repository/  # RepositoryImpl
-├── domain/
-│   ├── model/       # Plain Kotlin domain models
-│   ├── repository/  # Repository interfaces
-│   └── usecase/     # Use cases (one class per action)
-└── presentation/
-    ├── <screen>/    # Composable screen + ViewModel + UiState + UiEvent
-    └── navigation/  # Route definitions
+app/src/main/java/<package>/
+├── core/
+│   ├── domain/           # Outcome, DomainError, analytics interface (framework-free)
+│   ├── data/             # Networking, analytics impls, Outcomes adapter (knows frameworks)
+│   ├── ui/theme/         # AppTheme, color schemes
+│   ├── ui/common/        # Shared composables (TrackScreen, ...)
+│   └── navigation/       # AppNavGraph (top-level routes)
+└── feature_x/
+    ├── data/
+    │   ├── remote/       # Retrofit service + DTOs (mapping fn colocated)
+    │   ├── local/        # Room DAO + entities (only if the feature owns its own table)
+    │   └── repository/   # RepositoryImpl
+    ├── domain/
+    │   ├── model/        # Plain Kotlin domain models
+    │   ├── repository/   # Repository interfaces (return Outcome<T>)
+    │   └── usecase/      # Use cases (one class per action)
+    └── ui/
+        ├── <Screen>UiState.kt / <Screen>Action.kt / <Screen>ViewModel.kt
+        ├── <Screen>Screen.kt        # stateless Screen + Route wrapper + Preview(s)
+        └── <Screen>Route.kt         # @Serializable destination
 ```
 
-Dependency direction is always **presentation → domain ← data**. The domain layer has no Android or framework dependencies.
+Dependency direction is always **ui → domain ← data**, *per feature*. The domain layer has no Android or framework dependencies. Don't grow a global `ui/`, `domain/`, or `data/` next to features — that's the layer-first shape this project deliberately avoids.
 
 ## Conventions
 
@@ -65,8 +72,8 @@ Dependency direction is always **presentation → domain ← data**. The domain 
 - Never block the main thread. Prefer `Flow` over `LiveData` in new code.
 
 **Errors**
-- Domain layer returns `Outcome<T>` (sealed interface) carrying a `DomainError` on failure — never throws across layers, never returns `Result<T>` on a domain-facing signature. The canonical types live in `domain/Outcome.kt` and `domain/DomainError.kt` (see the `android-app-skeleton` skill).
-- Network / IO exceptions are mapped to `DomainError` at the repository boundary via `runCatching { ... }.toOutcome(::toDomainError)`.
+- Domain layer returns `Outcome<T>` (sealed interface) carrying a `DomainError` on failure — never throws across layers, never returns `Result<T>` on a domain-facing signature. The canonical types live in `core/domain/Outcome.kt` and `core/domain/DomainError.kt` (see the `android-app-skeleton` skill).
+- Network / IO exceptions are mapped to `DomainError` at the repository boundary via `runCatching { ... }.toOutcome(::toDomainError)`. The `toOutcome` adapter and `toDomainError` mapper are scaffolded once in `core/data/network/Outcomes.kt` — never open-code `runCatching { ... }.fold(...)` (it swallows `CancellationException`).
 
 ## Build
 
@@ -80,7 +87,7 @@ Dependency direction is always **presentation → domain ← data**. The domain 
 ## What Claude should do
 
 - **Always prefer editing existing files** over creating new ones. Only create files when a new feature genuinely needs them.
-- **Follow the layer boundaries.** No Android imports in `domain/`. No `Compose` imports outside `presentation/`.
+- **Follow the layer boundaries.** No Android / Retrofit / Room imports in `core/domain/` or `<feature>/domain/`. No Compose imports outside `core/ui/` or `<feature>/ui/`.
 - **Write tests** for new use cases and ViewModels. Compose UI tests for new screens where practical.
 - **Use the version catalog** when adding dependencies.
 - **Respect Kotlin idioms**: data classes, sealed classes/interfaces, extension functions, scope functions used sparingly and intentionally.

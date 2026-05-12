@@ -47,7 +47,13 @@ object NetworkModule {
         .build()
 
     @Provides @Singleton
-    fun provideRetrofit(ok: OkHttpClient): Retrofit = Retrofit.Builder()
+    fun provideJson(): Json = Json {
+        ignoreUnknownKeys = true
+        explicitNulls = false
+    }
+
+    @Provides @Singleton
+    fun provideRetrofit(ok: OkHttpClient, json: Json): Retrofit = Retrofit.Builder()
         .baseUrl(BuildConfig.API_BASE_URL)
         .client(ok)
         .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
@@ -57,6 +63,8 @@ object NetworkModule {
     fun provideOrderApi(retrofit: Retrofit): OrderApi = retrofit.create()
 }
 ```
+
+The `Json` instance is provided alongside the others so `provideRetrofit`'s `json` parameter actually resolves — see `retrofit-networking` for the full Retrofit + kotlinx.serialization wiring.
 
 ## Components (scopes) to know
 

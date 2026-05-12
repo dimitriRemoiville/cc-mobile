@@ -43,8 +43,9 @@ esac
 
 if command -v ktlint >/dev/null 2>&1; then
   ktlint -F "$FILE" >/dev/null 2>&1 || true
-elif [ -x ./gradlew ]; then
-  ./gradlew -q ktlintFormat 2>/dev/null || echo "ktlint: skipped (no ktlint binary, Gradle task unavailable)"
 else
-  echo "ktlint: skipped (not installed)"
+  # Don't fall back to `./gradlew ktlintFormat`: that formats the entire project
+  # on every Edit/Write, which is surprising scope creep on a single-file change.
+  # Mention it once so the user knows how to format on demand.
+  echo "ktlint: skipped ($FILE will be formatted on the next \`./gradlew ktlintFormat\`)"
 fi

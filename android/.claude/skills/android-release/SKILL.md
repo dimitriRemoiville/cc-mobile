@@ -132,8 +132,10 @@ This task only exists when the Crashlytics Gradle plugin is applied (`INCLUDE_FI
 Run sequentially; bail on the first failure:
 
 ```bash
-./gradlew :app:lintRelease :app:testReleaseUnitTest :app:assembleRelease :app:bundleRelease
+./gradlew :app:lintRelease :app:testReleaseUnitTest :app:bundleRelease
 ```
+
+`bundleRelease` already runs the per-variant R8 + signing pipeline, so adding `:app:assembleRelease` to the same command roughly doubles the time for no extra coverage. Run `assembleRelease` separately only when you need an `.apk` for sideload / internal QA distribution.
 
 Then verify, in this order:
 

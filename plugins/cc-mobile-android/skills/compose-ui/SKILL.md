@@ -1,6 +1,6 @@
 ---
 name: compose-ui
-description: Authoritative playbook for building Jetpack Compose screens and components in this project. Use whenever writing or editing any `@Composable`, setting up navigation destinations, themeing, previews, or state collection. Covers Material 3, state hoisting, recomposition discipline, accessibility, and testing hooks.
+description: Authoritative playbook for building Jetpack Compose screens and components in this project. Use whenever writing or editing any `@Composable`, theming, previews, or state collection. Covers Material 3, state hoisting, recomposition discipline, accessibility, and testing hooks. Navigation destinations and route plumbing live in `navigation-compose` — load that one for any nav-graph or typed-route work.
 ---
 
 # Compose UI skill
