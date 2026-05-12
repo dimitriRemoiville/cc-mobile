@@ -2,6 +2,9 @@
 name: kmm-a11y-reviewer
 description: Use PROACTIVELY after any change that affects user-visible strings, domain models flowing into UI, or per-platform UI in `:androidApp` / `iosApp/`. Reviews both platforms' UI for accessibility regressions and confirms the shared layer doesn't undermine either (e.g., locale-insensitive formatting, color-only status enums). Read-only; does not modify code.
 tools: Read, Grep, Glob, Bash
+skills:
+  - kmm-architecture
+  - kmm-ios-interop
 model: sonnet
 ---
 

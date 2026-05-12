@@ -324,9 +324,12 @@ check_agent_prefixes() {
   done
 }
 
-# Every `skills:` entry in an agent's frontmatter must map to a real skill
-# directory under the same stack's .claude/skills/. Catches typos and stale
-# references after a skill is renamed or removed.
+# Every agent must declare a non-empty `skills:` block in its frontmatter, and
+# every entry must map to a real skill directory under the same stack's
+# .claude/skills/. The presence requirement enforces the rule in the root
+# CLAUDE.md ("Agents declare their skills explicitly"), since per the
+# subagents spec preloaded skills do not inherit from the parent context.
+# An agent with zero skills is almost always a bug — flag it.
 check_agent_skills_resolve() {
   for stack in "${STACKS[@]}"; do
     local agents_dir="$ROOT/$stack/.claude/agents"
@@ -334,17 +337,24 @@ check_agent_skills_resolve() {
     [[ ! -d "$agents_dir" || ! -d "$skills_dir" ]] && continue
     local flagged=0
     while IFS= read -r -d '' f; do
-      local fm in_skills=0
+      local fm in_skills=0 skill_count=0 has_block=0
       fm="$(extract_frontmatter "$f")"
+      if [[ "$(has_key "$fm" "skills")" != "1" ]]; then
+        say_err "$stack/.claude/agents/$(basename "$f"): frontmatter missing required key: skills (every agent must preload at least one skill)"
+        flagged=$((flagged + 1))
+        continue
+      fi
       while IFS= read -r line; do
         if [[ "$line" =~ ^skills:[[:space:]]*$ ]]; then
           in_skills=1
+          has_block=1
           continue
         fi
         if [[ $in_skills -eq 1 ]]; then
           if [[ "$line" =~ ^[[:space:]]+-[[:space:]]+(.+)[[:space:]]*$ ]]; then
             local skill_name="${BASH_REMATCH[1]}"
             skill_name="${skill_name%"${skill_name##*[![:space:]]}"}"  # rtrim
+            skill_count=$((skill_count + 1))
             if [[ ! -d "$skills_dir/$skill_name" ]]; then
               say_err "$stack/.claude/agents/$(basename "$f"): references missing skill: $skill_name"
               flagged=$((flagged + 1))
@@ -354,9 +364,13 @@ check_agent_skills_resolve() {
           fi
         fi
       done <<<"$fm"
+      if [[ $has_block -eq 1 && $skill_count -eq 0 ]]; then
+        say_err "$stack/.claude/agents/$(basename "$f"): skills: block present but empty (delete the key or add at least one entry)"
+        flagged=$((flagged + 1))
+      fi
     done < <(find "$agents_dir" -maxdepth 1 -name '*.md' -print0)
     if [[ $flagged -eq 0 ]]; then
-      say_ok "$stack: agent skills: references resolve to real skills"
+      say_ok "$stack: every agent declares >=1 resolvable skill"
     fi
   done
 }
