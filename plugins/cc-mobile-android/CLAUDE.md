@@ -17,7 +17,7 @@ A native Android application written in **Kotlin** with **Jetpack Compose** as t
 - **Navigation:** Jetpack Navigation Compose (type-safe routes)
 - **Local storage:** Room for relational data, DataStore for preferences
 - **Image loading:** Coil for Compose
-- **Testing:** JUnit 4 + MockK + Turbine (Flow testing) for unit tests, Robolectric for Android-framework-bound tests, Compose UI tests, Hilt testing. (JUnit 5 is fine in greenfield modules that don't need `androidx.test.*` runners, but JUnit 4 is the default so Android instrumentation + Robolectric stay first-class.)
+- **Testing:** JUnit 4 + MockK + Turbine (Flow testing) for unit tests, Compose UI tests, Hilt testing. JUnit 5 is fine in greenfield modules that don't need `androidx.test.*` runners, but JUnit 4 is the default so Android instrumentation stays first-class. Robolectric is **not** part of the default stack — prefer pushing Android-framework-bound logic into instrumentation tests (`src/androidTest/`); add Robolectric only deliberately, with a one-page convention authored alongside it.
 
 ## Module / package layout
 
@@ -65,8 +65,8 @@ Dependency direction is always **presentation → domain ← data**. The domain 
 - Never block the main thread. Prefer `Flow` over `LiveData` in new code.
 
 **Errors**
-- Domain layer returns `Result<T>` or a sealed `Outcome` type — never throws across layers.
-- Network/IO exceptions are mapped at the repository boundary.
+- Domain layer returns `Outcome<T>` (sealed interface) carrying a `DomainError` on failure — never throws across layers, never returns `Result<T>` on a domain-facing signature. The canonical types live in `domain/Outcome.kt` and `domain/DomainError.kt` (see the `android-app-skeleton` skill).
+- Network / IO exceptions are mapped to `DomainError` at the repository boundary via `runCatching { ... }.toOutcome(::toDomainError)`.
 
 ## Build
 

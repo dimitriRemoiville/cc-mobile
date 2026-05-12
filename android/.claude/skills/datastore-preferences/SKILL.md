@@ -97,7 +97,14 @@ Ship it for one release, then remove the migration (and the legacy `SharedPrefer
 
 **DataStore is not multi-process safe.** If you have a widget, a `:remote` process, or a background service in a separate process, either:
 - Funnel all reads/writes through a single process (bind to it via a `ContentProvider` facade), or
-- Use `MultiProcessDataStore` from androidx `datastore-core` (preferences variant available since 1.1).
+- Use `MultiProcessDataStore` (the preferences variant has been available since `androidx.datastore:datastore-core-multiprocess` 1.1).
+
+If you choose the multi-process route, add the artifact to the catalog under the existing `datastore` version ref so it stays in lockstep with `datastore-preferences`:
+```toml
+# gradle/libs.versions.toml
+datastore-multiprocess = { module = "androidx.datastore:datastore-core-multiprocess", version.ref = "datastore" }
+```
+Don't pin a separate version — drift between the single-process and multi-process variants causes hard-to-debug serializer mismatches.
 
 Don't open the same file from two processes with the single-process API — it corrupts silently.
 

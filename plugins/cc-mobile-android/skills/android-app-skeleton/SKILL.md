@@ -18,6 +18,8 @@ This file is the template registry. The `/init-android-app` command reads this s
 | `{{PACKAGE_ID}}` | applicationId / root package | `com.example.myapp` |
 | `{{PACKAGE_PATH}}` | slash form of package id | `com/example/myapp` |
 | `{{APP_DISPLAY_NAME}}` | Human-facing name | `My App` |
+| `{{API_BASE_URL_DEV}}` | Dev-flavor API base URL (trailing slash required by Retrofit) | `https://api.dev.example.com/` |
+| `{{API_BASE_URL_PROD}}` | Prod-flavor API base URL (trailing slash required by Retrofit) | `https://api.example.com/` |
 
 ## Feature flags
 
@@ -51,7 +53,7 @@ Why not start multi-module? The module tax (extra build.gradle.kts per module, e
 6. Write `data/` package — Retrofit/OkHttp factory + sample API + `RemoteDataSource`, Hilt `@Module` for networking, **`analytics/` module wiring `AnalyticsTracker` to `NoopAnalyticsTracker` (always) or `FirebaseAnalyticsTracker` (`INCLUDE_FIREBASE`)**. Add `data/persistence/` + `data/datastore/` behind their flags.
 7. Write UI — `{{APP_CLASS}}` Application, `MainActivity`, theme, **`HomeScreen` with bottom NavigationBar + nested NavHost (Feed + Profile tabs)**, each tab gets its own `*Screen.kt` + `*ViewModel.kt` + state, top-level nav graph with `Home` as start destination.
 8. Write `:app` tests — `domain/OutcomeMapTest.kt` and a `ui/home/feed/FeedViewModelTest.kt` that mocks `AnalyticsTracker` (demonstrates wiring + DI testability in one beat).
-9. Compile + run unit tests.
+9. **Compile + assemble + run unit tests.** Run `:app:compileDebugKotlin`, then **`:app:assembleDevDebug`** (the full assemble — this is the gate that catches missing Gradle plugins, unresolved deps, manifest merger errors), then `:app:testDebugUnitTest`. `compileDebugKotlin` alone is not sufficient.
 10. Emit manual setup notes (signing, flavor stubs, Firebase files).
 
 ---
@@ -88,6 +90,7 @@ include(":app")
 plugins {
     alias(libs.plugins.android.application) apply false
     alias(libs.plugins.kotlin.serialization) apply false
+    alias(libs.plugins.kotlin.compose) apply false
     alias(libs.plugins.ksp) apply false
     alias(libs.plugins.hilt) apply false
     // INCLUDE_FIREBASE: alias(libs.plugins.google.services) apply false
@@ -218,6 +221,10 @@ android-library = { id = "com.android.library", version.ref = "agp" }
 # only if you've intentionally pinned AGP 8.x.
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
+# Compose Compiler is its own Gradle plugin since Kotlin 2.0. The plugin alias must be
+# applied on every module that sets `buildFeatures.compose = true` — the binary is
+# bundled with Kotlin but the plugin is what actually wires it into the build.
+kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
 hilt = { id = "com.google.dagger.hilt.android", version.ref = "hilt" }
 # INCLUDE_FIREBASE — version refs (not inline strings) so /upgrade-deps can surface
@@ -238,11 +245,11 @@ firebase-crashlytics = { id = "com.google.firebase.crashlytics", version.ref = "
 | **Retrofit converter coordinate** | `Unresolved reference: asConverterFactory`. | Retrofit 2.10+ ships Square's official `com.squareup.retrofit2:converter-kotlinx-serialization`, which is what the templates use. Older Retrofit forces the deprecated Jake Wharton converter, which doesn't export the same symbol. Use the latest Retrofit. |
 | **Coroutines test API** | Test fails with `Module with the Main dispatcher had failed to initialize` / `Dispatchers.setMain` unresolved. | Need `kotlinx-coroutines-test` whose major matches `kotlinx-coroutines-core`. Resolve them off the same `coroutines` ref so they always agree. |
 | **AGP 9 + KSP source dirs** | At config time: `Configuring Kotlin source sets is no longer supported. Please use the Android-specific source sets instead.` | Add `android.disallowKotlinSourceSets=false` to `gradle.properties` (already in the template). |
-| **Compose Compiler vs Kotlin** | Compose Compiler Gradle plugin error mentioning a Kotlin-version mismatch. | Compose Compiler is bundled into Kotlin 2.0+; the templates rely on that. If you see a mismatch, you've pinned Compose Compiler separately — don't, let Kotlin own it. |
+| **Compose Compiler plugin missing** | `Compose Compiler is required, but not applied` (or `composeCompiler extension not found`) on any module that sets `buildFeatures.compose = true`. | Since Kotlin 2.0 the Compose Compiler is its own Gradle plugin. The catalog ships it as `kotlin-compose` (version ref pinned to `kotlin`). Apply `alias(libs.plugins.kotlin.compose)` on every Compose-using module. Don't pin Compose Compiler separately — let the `kotlin` ref own it. |
 
 If the resolved versions don't match this skill's idioms (e.g. the resolution lands AGP < 9 because the user pinned it), stop and surface the mismatch instead of silently downgrading.
 
-> **Escape hatch: AGP 8.x.** The templates target AGP 9. To use AGP 8.x intentionally: (1) re-add `alias(libs.plugins.kotlin.android) apply false` at the root and `alias(libs.plugins.kotlin.android)` in `app/build.gradle.kts` (AGP 8 has no built-in Kotlin); (2) the `kotlin { compilerOptions { jvmTarget } }` block also works on AGP 8 with Kotlin 2.0+, so nothing to change there; (3) `android.disallowKotlinSourceSets=false` is unnecessary on AGP 8 (harmless to keep).
+> **Escape hatch: AGP 8.x.** The templates target AGP 9. To use AGP 8.x intentionally: (1) re-add `alias(libs.plugins.kotlin.android) apply false` at the root and `alias(libs.plugins.kotlin.android)` in `app/build.gradle.kts` (AGP 8 has no built-in Kotlin); (2) the `kotlin { compilerOptions { jvmTarget } }` block also works on AGP 8 with Kotlin 2.0+, so nothing to change there; (3) `android.disallowKotlinSourceSets=false` is unnecessary on AGP 8 (harmless to keep); (4) the `kotlin.compose` plugin alias is still required on Kotlin 2.0+ regardless of AGP major — leave it in.
 
 ---
 
@@ -258,6 +265,9 @@ plugins {
     alias(libs.plugins.android.application)
     // No `kotlin.android` alias — AGP 9 has built-in Kotlin (see root build.gradle.kts).
     alias(libs.plugins.kotlin.serialization)
+    // Required for `buildFeatures.compose = true` since Kotlin 2.0. Without this alias
+    // the Kotlin compiler reports `Compose Compiler is required, but not applied`.
+    alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
     alias(libs.plugins.hilt)
     // INCLUDE_FIREBASE: alias(libs.plugins.google.services)
@@ -284,6 +294,10 @@ android {
         versionName = "0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
+        // FLAVORS_OFF: when productFlavors are not generated (Phase 0 Q8 = no), uncomment
+        // the next line so BuildConfig.API_BASE_URL is still defined. With flavors on,
+        // each flavor sets its own value below — leave this commented out.
+        // buildConfigField("String", "API_BASE_URL", "\"{{API_BASE_URL_PROD}}\"")
     }
 
     flavorDimensions += "env"
@@ -292,9 +306,13 @@ android {
             dimension = "env"
             applicationIdSuffix = ".dev"
             versionNameSuffix = "-dev"
+            // Retrofit requires a trailing slash. The runtime client reads BuildConfig.API_BASE_URL
+            // (see data/network/ApiClientFactory.kt) — keep this the single source of truth.
+            buildConfigField("String", "API_BASE_URL", "\"{{API_BASE_URL_DEV}}\"")
         }
         create("prod") {
             dimension = "env"
+            buildConfigField("String", "API_BASE_URL", "\"{{API_BASE_URL_PROD}}\"")
         }
     }
 
@@ -1029,6 +1047,7 @@ import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import retrofit2.Retrofit
 import retrofit2.create
+import {{PACKAGE_ID}}.BuildConfig
 import {{PACKAGE_ID}}.data.network.ApiClientFactory
 import {{PACKAGE_ID}}.data.network.SampleApi
 import javax.inject.Singleton
@@ -1037,12 +1056,14 @@ import javax.inject.Singleton
 @InstallIn(SingletonComponent::class)
 object DataModule {
     @Provides @Singleton
-    fun retrofit(): Retrofit = ApiClientFactory.retrofit("https://example.invalid/")
+    fun retrofit(): Retrofit = ApiClientFactory.retrofit(BuildConfig.API_BASE_URL)
 
     @Provides @Singleton
     fun sampleApi(retrofit: Retrofit): SampleApi = retrofit.create()
 }
 ```
+
+`BuildConfig.API_BASE_URL` is wired per flavor in `app/build.gradle.kts` (`buildConfigField("String", "API_BASE_URL", ...)`). When flavors are off, the same field lives in `defaultConfig` instead — see the conditional in the build script template.
 
 ### Analytics: `data/analytics/`
 
@@ -1306,6 +1327,7 @@ Drop `google-services.json` into `app/src/dev/` and `app/src/prod/`. Never commi
 - **Keep the `domain/` package Android-free.** No `android.*` imports, no Compose, no Retrofit, no Room — only Kotlin stdlib + coroutines. Enforced by review until/unless you extract `:core:domain` (a `kotlin.jvm` module would enforce it mechanically).
 - **`ui/` consumes `domain/` interfaces, never `data/` types.** Repository implementations stay behind interfaces declared in `domain/`. Cross the boundary through use cases, not by reaching into `data/` directly.
 - **Compose BOM is the single source of truth** for Compose versions. Never pin individual Compose libs.
+- **Apply `kotlin.compose` (the standalone Gradle plugin) on every module with `buildFeatures.compose = true`.** The plugin alias lives in the catalog as `kotlin-compose` and rides the `kotlin` version ref. Without the alias, the Kotlin compiler aborts with `Compose Compiler is required, but not applied`. Don't pin Compose Compiler separately.
 - **Version catalog is the single source of truth** for all versions. Never inline `"2.1.0"` in a module `build.gradle.kts`.
 - **Hilt on the Application**, on every `Activity` / `ViewModel` / Service that needs injection. Don't sprinkle `EntryPoint` unless you truly have a non-Hilt consumer.
 - **`exportSchema = true`** is mandatory for Room once the app ships. The `schemas/` directory goes into version control.

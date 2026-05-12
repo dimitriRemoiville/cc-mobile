@@ -25,10 +25,11 @@ CLAUDE.md                                  # Project context & conventions
 │   ├── android-performance-analyst.md
 │   └── android-release-engineer.md
 ├── skills/                                # Domain knowledge packs
-│   ├── android-architecture/SKILL.md
-│   ├── android-app-skeleton/SKILL.md
 │   ├── android-accessibility/SKILL.md
+│   ├── android-app-skeleton/SKILL.md
+│   ├── android-architecture/SKILL.md
 │   ├── android-performance/SKILL.md
+│   ├── android-release/SKILL.md           # focused release-time playbook (preloaded by android-release-engineer)
 │   ├── android-security/SKILL.md
 │   ├── android-testing/SKILL.md
 │   ├── compose-ui/SKILL.md

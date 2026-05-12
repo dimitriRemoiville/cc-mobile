@@ -8,16 +8,16 @@ description: Networking patterns for this project — Retrofit service definitio
 ## The pipeline
 
 ```
-domain.Repository       # domain types only
+domain.Repository       # domain types only — returns Outcome<DomainType>
      ↓
-data.RepositoryImpl     # calls API, maps, returns Result<DomainType>
+data.RepositoryImpl     # calls API, maps DTO → domain, maps exceptions → DomainError
      ↓
-data.remote.Api         # Retrofit interface, returns DTOs
+data.remote.Api         # Retrofit interface, suspend functions returning DTOs
      ↓
 OkHttpClient            # interceptors, timeouts, logging
 ```
 
-Network errors are **mapped to domain errors at the repository boundary**. Nothing higher up should know about `HttpException` or `IOException`.
+Network errors are **mapped to `DomainError` at the repository boundary**. Nothing higher up should know about `HttpException` or `IOException`. The domain-facing return type is always `Outcome<T>` (see `kotlin-style` and the canonical types in `android-app-skeleton`).
 
 ## Service definition
 
@@ -76,36 +76,46 @@ Never expose DTOs beyond the data layer.
 
 ## Repository pattern
 
+The domain interface returns `Outcome<T>`; the implementation folds Retrofit's exceptions into `DomainError` in one place.
+
 ```kotlin
 class OrderRepositoryImpl @Inject constructor(
     private val api: OrderApi,
     @IoDispatcher private val io: CoroutineDispatcher,
 ) : OrderRepository {
 
-    override suspend fun getOrder(id: OrderId): Result<Order> = withContext(io) {
-        runCatching { api.getOrder(id.raw).toDomain() }
-            .mapError(::toDomainError)
+    override suspend fun getOrder(id: OrderId): Outcome<Order> = withContext(io) {
+        runCatching { api.getOrder(id.raw).toDomain() }.toOutcome(::toDomainError)
     }
 }
 
 private fun toDomainError(t: Throwable): DomainError = when (t) {
-    is HttpException -> when (t.code()) {
-        401 -> DomainError.Unauthorized
-        404 -> DomainError.NotFound
-        in 500..599 -> DomainError.Server
-        else -> DomainError.Unknown(t.code().toString())
+    is HttpException -> when (val code = t.code()) {
+        401 -> DomainError.Unauthorized(t)
+        404 -> DomainError.NotFound(t)
+        in 500..599 -> DomainError.Server(code, t)
+        else -> DomainError.Unknown(t)
     }
-    is IOException -> DomainError.Network
-    else -> DomainError.Unknown(t.message.orEmpty())
+    is IOException -> DomainError.Network(t)
+    else -> DomainError.Unknown(t)
 }
 ```
 
-`mapError` is a tiny extension:
+Lift `Result<T>` into `Outcome<T>` with one helper, kept in `data/` (it's the boundary that converts):
 
 ```kotlin
-inline fun <T, E : Throwable> Result<T>.mapError(transform: (Throwable) -> E): Result<T> =
-    fold(onSuccess = { Result.success(it) }, onFailure = { Result.failure(transform(it)) })
+inline fun <T> Result<T>.toOutcome(mapError: (Throwable) -> DomainError): Outcome<T> =
+    fold(
+        onSuccess = { Outcome.Success(it) },
+        onFailure = { t ->
+            // CancellationException must propagate — runCatching swallows it.
+            if (t is kotlinx.coroutines.CancellationException) throw t
+            Outcome.Failure(mapError(t))
+        },
+    )
 ```
+
+Why not `Result<T>` all the way up? Two reasons: (a) `Result.failure` requires a `Throwable`, which forces `DomainError` to extend `Throwable` — leaks an exception type into the domain; (b) `runCatching` swallows `CancellationException`, which silently breaks coroutine cancellation if not handled. The `toOutcome` helper does both correctly in one place.
 
 ## OkHttp configuration
 

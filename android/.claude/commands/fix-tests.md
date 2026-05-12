@@ -1,15 +1,15 @@
 ---
 description: Triage failing Android tests, cluster by root cause, delegate fixes to the android-tester subagent.
-argument-hint: [--scope=:module] [--filter=TestClass]
+argument-hint: "[--scope=:module] [--filter=<glob>]"
 allowed-tools: Read, Grep, Glob, Bash, Task
 ---
 
 # /fix-tests
 
 1. Run the targeted test set.
-   - Default: `./gradlew :app:testDebugUnitTest --continue`.
+   - Default: `./gradlew :app:testDebugUnitTest`.
    - If `--scope=:module` is provided, run tests in that module only.
-   - If `--filter=TestClass` is provided, append `--tests "TestClass*"`.
+   - `--filter=<glob>` is a Gradle test-filter glob, e.g. `--filter='*OrderViewModelTest*'` or `--filter='com.example.foo.*'`. The command appends it as `--tests '<glob>'`. Quote it — shell globbing will eat the `*` otherwise. Don't pass a bare class name; nested classes (`com.example.Foo$Nested`) won't match.
 2. Parse failures out of the Gradle output. For each, capture:
    - Fully-qualified test name.
    - Assertion / exception stack (first 5 frames).

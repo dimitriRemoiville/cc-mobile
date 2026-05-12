@@ -6,7 +6,15 @@ allowed-tools: Read, Write, Edit, Grep, Glob, Bash, Task, AskUserQuestion, WebFe
 
 # /init-android-app
 
-You are scaffolding a brand-new Android application from scratch. **Nothing is generated until Phase 0 is answered** — flags materially change the generated files.
+You are scaffolding a brand-new Android application from scratch. This command is intentionally a **thin orchestrator** — every file template, execution step, hard rule, and post-init checklist lives in `.claude/skills/android-app-skeleton/SKILL.md`. This file owns three things only:
+
+1. The Phase 0 questionnaire (skeleton can't ask questions).
+2. The Phase 1.5 version-resolution loop (`maven-metadata.xml` walk).
+3. The Phase 2/3 procedure pointers into the skeleton + smoke validation.
+
+If you find yourself re-explaining file structure, package layout, or template content here, stop — edit the skeleton instead and link to it from this file.
+
+---
 
 ## Phase 0 — Gather inputs
 
@@ -24,22 +32,14 @@ Use `AskUserQuestion` to collect (propose defaults, let user confirm or override
 5. **Include DataStore?** (yes/no, default yes) — drives `INCLUDE_DATASTORE`.
 6. **Include Firebase (Crashlytics + Analytics)?** (yes/no) — drives `INCLUDE_FIREBASE`. With this on, the analytics layer's Hilt module binds `AnalyticsTracker` to `FirebaseAnalyticsTracker`; with it off, it binds to `NoopAnalyticsTracker`. The Application class is the same either way (it injects the interface). The scaffold also installs a `tasks.matching { processGoogleServices }.onlyIf { ... }` guard so the project still compiles + installs before `google-services.json` arrives.
 7. **Stub release signing config?** (yes/no, default yes) — emits the `keystore.properties`-driven `signingConfigs` block plus a committed `keystore.properties.example`. The block is a no-op until the user fills in the file.
-8. **Flavors**: `dev` + `prod` (default yes). If yes, drives flavor blocks in Gradle.
+8. **Flavors**: `dev` + `prod` (default yes). If yes, drives flavor blocks in Gradle. If no, the `buildConfigField("String", "API_BASE_URL", ...)` line in `defaultConfig` (the `FLAVORS_OFF` comment in the skeleton's `app/build.gradle.kts`) gets uncommented and the `productFlavors` block is omitted.
+9. **API base URL(s)** — drives `{{API_BASE_URL_DEV}}` and `{{API_BASE_URL_PROD}}` placeholders. Defaults: `https://api.dev.example.com/` and `https://api.example.com/`. **Trailing slash is required** by Retrofit; reject input that's missing it. If flavors are off (Q8), ask for one URL only and write it into the `defaultConfig.buildConfigField` line. The runtime client (`data/network/ApiClientFactory.kt`) reads `BuildConfig.API_BASE_URL`, so this is the single source of truth — don't sprinkle hard-coded URLs.
 
 Confirm the plan in one short paragraph. Proceed only after confirmation.
 
 ## Phase 1 — Load the blueprint
 
-Read `.claude/skills/android-app-skeleton/SKILL.md` in full. It is the source of truth for:
-
-- The execution order.
-- Every file template (`build.gradle.kts`, `libs.versions.toml`, `AndroidManifest.xml`, source files under `app/src/main/java`, tests under `app/src/test/java`).
-- Placeholders: `{{APP_NAME}}`, `{{APP_CLASS}}`, `{{PACKAGE_ID}}`, `{{PACKAGE_PATH}}`, `{{APP_DISPLAY_NAME}}`.
-- Flag blocks: `INCLUDE_ROOM`, `INCLUDE_DATASTORE`, `INCLUDE_FIREBASE`.
-- Hard rules (no `kapt` — KSP only; no string routes; no `android.*` imports inside the `domain` package; Compose BOM — never pin Compose libs individually).
-- AGP-version baseline. The templates assume **AGP 9 / Kotlin 2.2 / JDK 17**; the skill calls out the AGP 8.x deltas in a callout. Don't silently retarget.
-
-Follow templates verbatim — substitute placeholders. The only acceptable divergence is a documented AGP-version delta; if you find yourself improvising more, stop and surface what you're seeing.
+**Read `.claude/skills/android-app-skeleton/SKILL.md` in full.** It is the only source of truth for placeholders, execution order, file templates, hard rules, and post-scaffold checklist. Don't paraphrase or summarize the skill in this command — link to it.
 
 ## Phase 1.5 — Resolve all versions online
 
@@ -51,6 +51,7 @@ For each ref, `WebFetch` the URL below and pick the newest version that is **not
 |---|---|
 | `agp` | `https://dl.google.com/android/maven2/com/android/tools/build/gradle/maven-metadata.xml` |
 | `kotlin` | `https://repo1.maven.org/maven2/org/jetbrains/kotlin/kotlin-stdlib/maven-metadata.xml` |
+| `kotlin-compose` (sanity check only — pinned to `kotlin` ref) | `https://repo1.maven.org/maven2/org/jetbrains/kotlin/compose-compiler-gradle-plugin/maven-metadata.xml` (used to confirm the artifact exists at the resolved Kotlin version) |
 | `ksp` | `https://repo1.maven.org/maven2/com/google/devtools/ksp/symbol-processing-api/maven-metadata.xml` — then filter to versions starting with `<resolved-kotlin>-` (e.g. `2.2.10-`); KSP versioning is `<kotlinVersion>-<kspPatch>`. |
 | `coroutines` / `coroutines-test` | `https://repo1.maven.org/maven2/org/jetbrains/kotlinx/kotlinx-coroutines-core/maven-metadata.xml` (use the same value for both refs). |
 | `hilt` | `https://repo1.maven.org/maven2/com/google/dagger/hilt-android/maven-metadata.xml` |
@@ -73,7 +74,7 @@ For each ref, `WebFetch` the URL below and pick the newest version that is **not
 | `turbine` | `https://repo1.maven.org/maven2/app/cash/turbine/turbine/maven-metadata.xml` |
 | `compileSdk` / `targetSdk` | Use the latest stable Android API level (currently the highest API the user's installed `compileSdk` allows; if unsure, run `ls $ANDROID_HOME/platforms` and pick the highest `android-N`). Hard-code that integer in `app/build.gradle.kts`. |
 
-**Resolution order matters.** Resolve `kotlin` *before* `ksp` (KSP must match Kotlin's patch version) and *before* `coroutines` (coroutines major must match Kotlin major). Run independent fetches in parallel where you can.
+**Resolution order matters.** Resolve `kotlin` *before* `ksp` (KSP must match Kotlin's patch version) and *before* `coroutines` (coroutines major must match Kotlin major). The Compose Compiler plugin (`kotlin-compose`) does not need a separate fetch — its catalog entry rides the `kotlin` ref. Run independent fetches in parallel where you can.
 
 **After resolution, sanity-check against the skill's "Compatibility traps" table.** If a known trap pattern matches the resolved set (e.g. AGP 9 + Hilt < 2.59), bump the affected ref to the next available version that clears the trap and rerun the affected fetch. Do not silently downgrade.
 
@@ -81,70 +82,26 @@ For each ref, `WebFetch` the URL below and pick the newest version that is **not
 
 ## Phase 2 — Execute the scaffold
 
-Follow the skill's procedure:
+Follow the **skeleton skill's "Execution order" section verbatim** (`.claude/skills/android-app-skeleton/SKILL.md` → "Execution order"). Substitute the placeholders from Phase 0 + Phase 1.5. The skill is the source of truth for which files to create, in which order, and with what content; do not duplicate that list here.
 
-1. Create the project directory and the Gradle structure:
-   - Root: `settings.gradle.kts`, `build.gradle.kts`, `gradle.properties` (with `android.disallowKotlinSourceSets=false` for AGP 9), `gradle/libs.versions.toml`, `gradle/wrapper/gradle-wrapper.properties`, `gradle/gradle-daemon-jvm.properties` (toolchain 21 via foojay).
-   - Single module: `:app` only. Clean Architecture layers live as packages (`domain/`, `data/`, `ui/`), not as separate Gradle modules — see the skill's "Module or package?" note. Extract modules later if the app grows into multi-feature territory or a shared library appears.
-2. Initialize the Gradle wrapper: `gradle wrapper --gradle-version <latest-stable>` (if `gradle` is on PATH), or copy in a known-good `gradle-wrapper.jar` + `gradlew` + `gradlew.bat` from a local cache. Bail if neither is available.
-3. Write `libs.versions.toml` using the skill as the **shape** (which refs to include, which libraries/plugins to alias). All version values come from Phase 1.5's resolution table — never copy the skill's `<latest-stable>` placeholders verbatim, never invent numbers from training data. After resolution, sanity-check the set against the skill's "Compatibility traps" table. The `kotlin-android` plugin alias is intentionally absent on AGP 9 (built-in Kotlin) — only re-add it if the resolved AGP < 9.
-4. Write root `build.gradle.kts` (no `kotlin.android` plugin alias under AGP 9) and `settings.gradle.kts` (the latter includes `:app` only).
-5. Write `app/build.gradle.kts` with the AGP 9 idioms from the skill: `kotlin { compilerOptions { jvmTarget.set(JvmTarget.JVM_17) } }` (not `kotlinOptions { jvmTarget = "17" }`), `buildFeatures { buildConfig = true }` (always — needed by the analytics collection toggle), the resolved `compileSdk` integer, the optional `signingConfigs.release` block reading from `keystore.properties` (only if Phase 0 Q7 = yes), and — under `INCLUDE_FIREBASE` — the `tasks.matching { processGoogleServices }.onlyIf { ... }` skip-if-missing guard. No `project(":core:*")` entries.
-6. Write `AndroidManifest.xml`, `strings.xml` (with `app_name`, `tab_feed`, `tab_profile`), themes, one launcher icon set (mipmap-anydpi-v26 vector placeholder).
-7. Write source files under `app/src/main/java/{{PACKAGE_PATH}}/`:
-   - `{{APP_CLASS}}.kt` (single Hilt Application variant — injects `AnalyticsTracker` and calls `setCollectionEnabled(!BuildConfig.DEBUG)` regardless of `INCLUDE_FIREBASE`; with the no-op tracker it's harmless), `MainActivity.kt`.
-   - `ui/theme/AppTheme.kt` (Material 3, dynamic-color guarded by `Build.VERSION.SDK_INT >= S` unless Min SDK ≥ 31).
-   - `ui/home/HomeScreen.kt` (Scaffold + `NavigationBar` + nested `NavHost`; tabs are `@Serializable HomeRoute.Feed` and `HomeRoute.Profile`; selection via `NavDestination.hasRoute(KClass)`).
-   - `ui/home/feed/FeedScreen.kt` + `FeedViewModel.kt` + `FeedState`. The VM injects `AnalyticsTracker` and calls `analytics.track(AnalyticsEvent.FeedViewed)` from `init`.
-   - `ui/home/profile/ProfileScreen.kt` + `ProfileViewModel.kt` + `ProfileState`. Same pattern, tracks `AnalyticsEvent.ProfileViewed`.
-   - `ui/common/TrackScreen.kt` — `@Composable` helper that fires an event once on entry via `LaunchedEffect`. Useful for screens whose VMs survive nav transitions.
-   - `navigation/AppNavGraph.kt` (single `@Serializable Home` destination — bottom-nav lives nested inside `HomeScreen`, not at the top level).
-   - `domain/Outcome.kt`, `domain/DomainError.kt`. Treat the `domain/` package as Android-free by convention — no `android.*` imports here, ever.
-   - `domain/analytics/AnalyticsTracker.kt` (interface), `domain/analytics/AnalyticsEvent.kt` (sealed taxonomy: `HomeViewed`, `FeedViewed`, `ProfileViewed`, `ItemTapped(itemId)`, `ScreenOpenedFromDeepLink(route)`).
-   - `data/network/ApiClientFactory.kt`, `data/network/SampleApi.kt` (interface + `@Serializable PingDto`), `data/network/RemoteDataSource.kt` (maps DTOs + exceptions to `Outcome` + `DomainError`).
-   - `data/di/DataModule.kt` — Hilt `@Module` providing Retrofit + `SampleApi`.
-   - `data/analytics/NoopAnalyticsTracker.kt` (always emit), `data/analytics/AnalyticsModule.kt` (always emit; binds `AnalyticsTracker` to the Firebase or no-op impl based on `INCLUDE_FIREBASE`).
-   - (Conditional, `INCLUDE_FIREBASE`) `data/analytics/FirebaseAnalyticsTracker.kt`.
-   - (Conditional, `INCLUDE_ROOM`) `data/persistence/` — Room DB, entities, DAOs, repository.
-   - (Conditional, `INCLUDE_DATASTORE`) `data/datastore/` — DataStore typed preferences.
-8. Write tests under `app/src/test/java/{{PACKAGE_PATH}}/`:
-   - `domain/OutcomeMapTest.kt` — anchors the framework-free convention for the domain layer.
-   - `ui/home/feed/FeedViewModelTest.kt` — JUnit 4 + MockK + Turbine. Verifies (a) the initial UiState shape and (b) that the VM tracks `AnalyticsEvent.FeedViewed` on `init` (analytics-mocking demo).
-9. (If Phase 0 Q7 = yes) Write `keystore.properties.example` at the repo root and add `keystore.properties`, `*.keystore`, and `/app/src/*/google-services.json` to `.gitignore`.
-10. Run `./gradlew :app:compileDebugKotlin` to validate. If it fails, print the error and stop.
-11. Run `./gradlew :app:testDebugUnitTest`.
-12. Print the manual setup note — release signing key generation (`keytool -genkey ...`), per-flavor `applicationIdSuffix`, CI, Play Console metadata, and "extract `domain/` + `data/` to `:core:*` modules once you have real coupling pressure" as a followup.
+When you reach step 9 of the skill (compile + assemble + run unit tests), run **all three** commands — `compileDebugKotlin` alone is not sufficient. The full `assembleDevDebug` is the gate that catches missing Gradle plugins (e.g. the Compose Compiler plugin), unresolved dependencies, and manifest merger errors:
+
+```
+./gradlew :app:compileDebugKotlin
+./gradlew :app:assembleDevDebug      # or :app:assembleDebug if flavors off
+./gradlew :app:testDebugUnitTest
+```
+
+If any of these fails, print the error and stop. Do not "fix and continue" silently — the user needs to see what didn't work and decide.
 
 ## Phase 3 — Post-init checklist
 
-Print a concise checklist:
-
-```
-Scaffold complete. Next steps:
-
-☐ Generate a release keystore and copy keystore.properties.example → keystore.properties (gitignored).
-   keytool -genkey -v -keystore release.keystore -alias release -keyalg RSA -keysize 2048 -validity 10000
-   The signing config in app/build.gradle.kts auto-wires once keystore.properties exists.
-☐ [if Firebase] drop google-services.json into app/src/dev/ and app/src/prod/.
-   The build-time guard skips processGoogleServices per-variant and the runtime
-   FirebaseAnalyticsTracker no-ops if FirebaseApp isn't initialized — so the
-   project compiles, installs, AND launches without it. Crashlytics/Analytics
-   start reporting as soon as the JSON lands.
-☐ [if Room] run `./gradlew :app:kspDevDebugKotlin` — confirm app/schemas/ is populated.
-☐ Replace the Feed and Profile tab placeholders with your first real features.
-   The tabs live under ui/home/<tab>/ as typed HomeRoute.<Tab> destinations.
-☐ Add new analytics events as sealed entries in domain/analytics/AnalyticsEvent.kt
-   (don't sprinkle magic strings — the sealed type is the source of truth).
-
-Build it:
-  ./gradlew :app:installDevDebug
-  ./gradlew :app:testDebugUnitTest
-```
+The skeleton owns the "Post-scaffold manual steps" block — print exactly what's there, with values substituted (flavor names, package id). Don't compose your own.
 
 ## Ground rules
 
 - Stay inside the `ClaudeCodeMobile` workspace unless the user points to a different parent directory.
-- One command per Bash call where it matters (`gradle wrapper`, `./gradlew compileDebugKotlin`, `./gradlew testDebugUnitTest`).
+- One command per Bash call where it matters (`gradle wrapper`, `./gradlew compileDebugKotlin`, `./gradlew assembleDevDebug`, `./gradlew testDebugUnitTest`).
 - Never commit.
 - Do not scaffold real features — stop once the Home + Feed + Profile tabs render and the FeedViewModelTest passes.
 - Do not create unsolicited docs.
@@ -153,5 +110,6 @@ Build it:
 
 - Target dir already contains `settings.gradle.kts` → switch to the merge flow (Phase 0). Don't proceed without the user picking abort / subdirectory / merge explicitly.
 - `java`, `gradle`, or Android SDK not on PATH → stop and tell the user.
-- Resolved `agp` < 9.0 and the user hasn't asked for AGP 8.x explicitly → stop and surface the floor mismatch (the templates are AGP 9-shaped).
+- Resolved `agp` < 9.0 and the user hasn't asked for AGP 8.x explicitly → stop and surface the floor mismatch (the templates are AGP 9-shaped); the skill's "Escape hatch: AGP 8.x" callout describes the deltas if the user confirms.
 - User picks Firebase without having a project set up → proceed; the `onlyIf` guard keeps the build green until the JSON arrives, but flag the manual drop.
+- API base URL doesn't end with `/` → reject and re-ask. Retrofit will throw at construction time otherwise.

@@ -3,7 +3,7 @@ name: android-architecture
 description: How MVVM + Clean Architecture is applied in this Kotlin + Compose codebase. Load when designing a new feature, deciding where code belongs, adding a repository or use case, or reviewing layer boundaries.
 ---
 
-# Clean Architecture in this project
+# Android architecture (MVVM + Clean)
 
 ## The three layers
 
@@ -30,7 +30,7 @@ data class Order(val id: OrderId, val items: List<OrderItem>, val total: Money)
 
 // domain/repository/OrderRepository.kt
 interface OrderRepository {
-    suspend fun getOrder(id: OrderId): Result<Order>
+    suspend fun getOrder(id: OrderId): Outcome<Order>
     fun observeOrders(): Flow<List<Order>>
 }
 
@@ -39,9 +39,11 @@ class SubmitOrderUseCase @Inject constructor(
     private val orders: OrderRepository,
     private val clock: Clock,
 ) {
-    suspend operator fun invoke(draft: OrderDraft): Result<Order> { ... }
+    suspend operator fun invoke(draft: OrderDraft): Outcome<Order> { ... }
 }
 ```
+
+`Outcome<T>` is the project's canonical sealed result, defined in `domain/Outcome.kt` (see `android-app-skeleton`). Domain-facing signatures never use `Result<T>`.
 
 ## Data layer
 
@@ -66,10 +68,12 @@ class OrderRepositoryImpl @Inject constructor(
     private val api: OrderApi,
     private val dao: OrderDao,
 ) : OrderRepository {
-    override suspend fun getOrder(id: OrderId): Result<Order> =
-        runCatching { api.getOrder(id.raw).toDomain() }
+    override suspend fun getOrder(id: OrderId): Outcome<Order> =
+        runCatching { api.getOrder(id.raw).toDomain() }.toOutcome(::toDomainError)
 }
 ```
+
+`toOutcome` is the data-layer adapter that lifts `Result<T>` into `Outcome<T>` (and rethrows `CancellationException` so coroutine cancellation still works) — see `retrofit-networking`.
 
 ## Presentation layer
 

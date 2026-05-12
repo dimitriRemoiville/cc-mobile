@@ -118,7 +118,7 @@ Where it's sensible, the four stacks align on the same concepts so you can move 
 | DI | Hilt | Composition root + initializer injection | Koin (Hilt is Android-only) | `get_it` per-feature modules |
 | Networking | Retrofit + OkHttp + kotlinx.serialization | URLSession + Codable | Ktor Client + kotlinx.serialization (OkHttp / Darwin engines) | `dio` + OpenAPI-generated client |
 | Routing | Navigation-Compose | `NavigationStack` typed routes | N/A (per platform) | `go_router` typed routes |
-| Error surface | sealed `DomainError` | sealed `DomainError` | sealed `DomainError` | sealed `Failure` + `Either<Failure, T>` (fpdart) |
+| Error surface | sealed `Outcome<T>` carrying `DomainError` | sealed `DomainError` | sealed `DomainError` | sealed `Failure` + `Either<Failure, T>` (fpdart) |
 | Persistence | Room + DataStore | SwiftData + `@AppStorage` + Keychain | SQLDelight (+ platform-specific KV via Koin) | drift + sqlcipher + SharedPrefs + secure storage |
 | Testing | JUnit + MockK + Turbine | Swift Testing + hand-rolled fakes | `kotlin.test` + `kotlinx-coroutines-test` + MockEngine | `flutter_test` + `bloc_test` + `mocktail` + `alchemist` |
 | Review agent | `android-reviewer` | `ios-reviewer` | `kmm-reviewer` | `flutter-reviewer` |

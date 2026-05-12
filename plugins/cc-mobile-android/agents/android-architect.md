@@ -4,6 +4,7 @@ description: Use PROACTIVELY for architectural decisions in an Android/Kotlin/Co
 tools: Read, Grep, Glob, Bash
 skills:
   - android-architecture
+  - android-app-skeleton
   - kotlin-style
 model: sonnet
 ---

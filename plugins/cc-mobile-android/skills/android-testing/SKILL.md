@@ -33,23 +33,25 @@ class SubmitOrderUseCaseTest {
     @Test
     fun `returns Success when repository accepts the order`() = runTest {
         val draft = OrderDraft(items = listOf(item()))
-        coEvery { orders.create(draft) } returns Result.success(ORDER)
+        coEvery { orders.create(draft) } returns Outcome.Success(ORDER)
 
         val result = submit(draft)
 
-        assertThat(result.isSuccess).isTrue()
+        assertThat(result).isInstanceOf(Outcome.Success::class.java)
     }
 
     @Test
     fun `returns Failure when repository returns error`() = runTest {
-        coEvery { orders.create(any()) } returns Result.failure(DomainError.Network)
+        coEvery { orders.create(any()) } returns Outcome.Failure(DomainError.Network())
 
         val result = submit(OrderDraft(emptyList()))
 
-        assertThat(result.exceptionOrNull()).isEqualTo(DomainError.Network)
+        assertThat(result).isEqualTo(Outcome.Failure(DomainError.Network()))
     }
 }
 ```
+
+Repository / use-case mocks always return `Outcome.Success(...)` or `Outcome.Failure(DomainError.X(...))` — not `Result.success` / `Result.failure`. See `kotlin-style` for why.
 
 ## ViewModel tests
 
@@ -70,7 +72,7 @@ class OrderViewModelTest {
 
     @Test
     fun `state transitions Loading -> Success`() = runTest(dispatcher) {
-        coEvery { submit(any()) } returns Result.success(ORDER)
+        coEvery { submit(any()) } returns Outcome.Success(ORDER)
 
         viewModel.state.test {
             assertThat(awaitItem()).isEqualTo(OrderUiState.Loading)
@@ -106,9 +108,9 @@ Default to **fakes** for classes with >2 methods or non-trivial behavior. Fakes 
 ```kotlin
 class FakeOrderRepository : OrderRepository {
     var orders: Map<OrderId, Order> = emptyMap()
-    override suspend fun getOrder(id: OrderId) =
-        orders[id]?.let(Result.Companion::success)
-            ?: Result.failure(DomainError.NotFound)
+    override suspend fun getOrder(id: OrderId): Outcome<Order> =
+        orders[id]?.let { Outcome.Success(it) }
+            ?: Outcome.Failure(DomainError.NotFound())
 }
 ```
 

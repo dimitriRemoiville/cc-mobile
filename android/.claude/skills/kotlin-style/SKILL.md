@@ -52,15 +52,24 @@ Don't nest them. If you're writing `let { apply { run { ... } } }`, split into f
 
 ## Error handling
 
-- Business operations return `Result<T>` or a sealed `Outcome`:
+- **Canonical contract: `Outcome<T>` + `DomainError`.** Business operations cross layer boundaries as `Outcome`, never as `Result<T>` and never as raw `throw`. The two types are defined once in `domain/Outcome.kt` and `domain/DomainError.kt` (see `android-app-skeleton`); every use case, repository method, and ViewModel that needs a typed failure goes through them.
   ```kotlin
   sealed interface Outcome<out T> {
       data class Success<T>(val value: T) : Outcome<T>
       data class Failure(val error: DomainError) : Outcome<Nothing>
   }
+
+  sealed class DomainError(open val cause: Throwable? = null) {
+      data class Network(override val cause: Throwable? = null) : DomainError(cause)
+      data class Unauthorized(override val cause: Throwable? = null) : DomainError(cause)
+      data class NotFound(override val cause: Throwable? = null) : DomainError(cause)
+      data class Server(val code: Int, override val cause: Throwable? = null) : DomainError(cause)
+      data class Unknown(override val cause: Throwable? = null) : DomainError(cause)
+  }
   ```
-- `runCatching { ... }` at layer boundaries is fine. Don't use it as a drop-in `try/catch` anywhere else — it swallows `CancellationException` unless you rethrow.
-- Map platform exceptions to domain errors in the repository. The domain layer shouldn't know about `IOException` or `HttpException`.
+- **Don't mix `Result<T>` and `Outcome<T>`.** Kotlin's stdlib `Result<T>` is fine *internally* inside the data layer (for example, wrapping a `runCatching { api.call() }` before mapping it). It must not appear in domain-facing signatures. The reviewer agent flags any `Result<T>` return type on a `domain/` interface.
+- `runCatching { ... }` at the data-layer boundary is fine — fold it straight into an `Outcome`. Don't use it as a drop-in `try/catch` anywhere else; it swallows `CancellationException` unless you rethrow.
+- Map platform exceptions to `DomainError` in the repository. The domain layer shouldn't know about `IOException` or `HttpException`.
 
 ## Functions
 

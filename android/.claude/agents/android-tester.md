@@ -5,6 +5,7 @@ tools: Read, Write, Edit, Grep, Glob, Bash
 skills:
   - android-testing
   - kotlin-style
+  - compose-ui
 model: sonnet
 ---
 

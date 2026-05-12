@@ -1,6 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
-  "_comment": "Hook bodies live in .claude/hooks/*.sh so they're versionable, testable, and reviewable. ${CLAUDE_PLUGIN_ROOT} resolves to the unpacked plugin dir when shipped via cc-mobile-android.plugin; falls back to the workspace .claude/ when used directly.",
+  "_comment": "Hook bodies live in .claude/hooks/*.sh so they're versionable, testable, and reviewable. The scripts read the tool input from stdin JSON (the modern Claude Code hook contract) and fall back to CLAUDE_FILE_PATHS / CLAUDE_TOOL_INPUT_command env vars on older versions. ${CLAUDE_PLUGIN_ROOT} resolves to the unpacked plugin dir when shipped via cc-mobile-android.plugin; falls back to the workspace .claude/ when used directly. The PreToolUse matcher is intentionally 'Bash' (any Bash call); pre-commit.sh self-filters on `git commit` and on whether anything kotlin-shaped is staged, so the cost on unrelated Bash calls is negligible.",
   "hooks": {
     "PostToolUse": [
       {

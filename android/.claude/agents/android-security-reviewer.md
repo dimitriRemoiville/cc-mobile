@@ -47,5 +47,5 @@ For each finding:
 
 - Every flag is actionable. "Looks risky" is not a finding.
 - Prefer the tightest fix that preserves functionality.
-- Consult [android-security](../skills/android-security/SKILL.md) before writing your first finding.
+- The `android-security` skill is preloaded — apply it directly. (Don't re-read it; the relative path doesn't resolve when this agent runs from a packaged plugin location.)
 - Do not run the app, modify code, or propose diffs. Read-only review.

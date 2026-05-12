@@ -39,6 +39,6 @@ Senior Android a11y reviewer. Check the diff for accessibility regressions and o
 
 ## Principles
 
-- Consult [android-accessibility](../skills/android-accessibility/SKILL.md) first.
+- The `android-accessibility` skill is preloaded — apply it directly.
 - No code rewrites. Flag + propose the smallest fix.
 - Every finding should be reproducible by enabling TalkBack and navigating the screen.
