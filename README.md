@@ -56,11 +56,11 @@ This repo is a plugin marketplace for **both Claude Code and GitHub Copilot CLI*
 ### Copilot CLI
 
 ```bash
-copilot plugin marketplace add <org>/ClaudeCodeMobile
-copilot plugin install cc-mobile-android@cc-mobile
-copilot plugin install cc-mobile-ios@cc-mobile
-copilot plugin install cc-mobile-kmm@cc-mobile
-copilot plugin install cc-mobile-flutter@cc-mobile
+/plugin marketplace add dimitriRemoiville/cc-mobile
+/plugin install cc-mobile-android@cc-mobile
+/plugin install cc-mobile-ios@cc-mobile
+/plugin install cc-mobile-kmm@cc-mobile
+/plugin install cc-mobile-flutter@cc-mobile
 ```
 
 Installing just the stacks you work with is fine — they're independent.
@@ -89,7 +89,7 @@ A few things to know:
 /plugin marketplace update cc-mobile
 
 # Copilot CLI
-copilot plugin update cc-mobile-android
+/plugin update cc-mobile-android
 ```
 
 Re-running `install` on an updated plugin refreshes its skills, agents, and commands. The stack's `CLAUDE.md` is shipped inside the plugin; if a coworker has dropped a copy into their project root, they should re-copy it when the template evolves (see each plugin's README for the copy step).
@@ -99,7 +99,7 @@ Re-running `install` on an updated plugin refreshes its skills, agents, and comm
 1. Edit the stack under `<stack>/.claude/` and `<stack>/CLAUDE.md` in this repo.
 2. Bump `version` in the corresponding `plugins/cc-mobile-<stack>/.claude-plugin/plugin.json`.
 3. Run `scripts/build-plugin.sh <stack>` (or `all`) to refresh `plugins/cc-mobile-<stack>/` (with `.agent.md` agents for Copilot CLI) and re-zip the `.plugin` artifact (with `.md` agents for Claude Code).
-4. Commit and push. Coworkers pick up the change via `/plugin marketplace update` (Claude Code) or `copilot plugin update` (Copilot CLI).
+4. Commit and push. Coworkers pick up the change via `/plugin marketplace update` (Claude Code) or `/plugin update` (Copilot CLI).
 
 Hand-authored files (`plugin.json`, each plugin's `README.md`, and both `marketplace.json` files) are preserved across rebuilds — only `skills/`, `agents/`, `commands/`, and `CLAUDE.md` are refreshed from the source stack folder.
 

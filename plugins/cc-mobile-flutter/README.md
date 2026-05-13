@@ -69,7 +69,7 @@ This plugin is built from the [ClaudeCodeMobile](https://github.com/) monorepo's
 /plugin marketplace update cc-mobile
 
 # Copilot CLI
-copilot plugin update cc-mobile-flutter
+/plugin update cc-mobile-flutter
 ```
 
 Your `CLAUDE.md` in the consuming project isn't touched by re-install — update it by hand when the template evolves.

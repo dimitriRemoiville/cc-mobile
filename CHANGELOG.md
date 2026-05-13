@@ -47,5 +47,5 @@ First tagged release. Four per-stack configurations (Android, iOS, KMM, Flutter)
 - Flutter `/init-flutter-app` referenced a leaked sandbox path and used `$1` instead of `$ARGUMENTS`.
 - Removed `.DS_Store` files and stale permission entries (`Read`/`Write`/`Edit` listed as Bash patterns) from `settings.json`.
 
-[0.2.0]: https://github.com/dimitriRemoiville/ClaudeCodeMobile/compare/v0.1.0...v0.2.0
-[0.1.0]: https://github.com/dimitriRemoiville/ClaudeCodeMobile/releases/tag/v0.1.0
+[0.2.0]: https://github.com/dimitriRemoiville/cc-mobile/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/dimitriRemoiville/cc-mobile/releases/tag/v0.1.0

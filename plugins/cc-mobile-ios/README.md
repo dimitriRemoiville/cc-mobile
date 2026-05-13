@@ -64,7 +64,7 @@ When a new version ships, reinstall via whichever tool you use:
 /plugin marketplace update cc-mobile
 
 # Copilot CLI
-copilot plugin update cc-mobile-ios
+/plugin update cc-mobile-ios
 ```
 
 Your project's `CLAUDE.md` isn't touched by re-install — update it by hand when the template evolves.
