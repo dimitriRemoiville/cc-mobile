@@ -4,6 +4,7 @@ description: Use PROACTIVELY for Flutter release tasks — `pubspec.yaml` versio
 tools: Read, Write, Edit, Grep, Glob, Bash
 skills:
   - flutter-app-skeleton
+  - flutter-release
 model: sonnet
 ---
 

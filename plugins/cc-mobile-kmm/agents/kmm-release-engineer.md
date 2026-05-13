@@ -5,6 +5,7 @@ tools: Read, Write, Edit, Grep, Glob, Bash
 skills:
   - xcframework-distribution
   - kmm-app-skeleton
+  - kmm-release
 model: sonnet
 ---
 

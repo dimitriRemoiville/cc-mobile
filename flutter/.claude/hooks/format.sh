@@ -1,11 +1,40 @@
 #!/usr/bin/env bash
 # .claude/hooks/format.sh — PostToolUse formatter for Dart.
+#
 # Runs `dart format` on the file Claude just edited or wrote. Best-effort:
-# never fails the tool call.
+# never fails the tool call. Prefer the local `dart` binary; quietly skip if
+# the Dart SDK isn't on PATH.
+#
+# Hook contract: Claude Code passes the tool input as JSON on stdin
+# ({"tool_name": "...", "tool_input": {"file_path": "..."}, ...}). The legacy
+# CLAUDE_FILE_PATHS env var is honored as a fallback so this script keeps
+# working on older versions, but stdin is the authoritative source on modern
+# Claude Code releases.
 
 set -euo pipefail
 
-FILE="${CLAUDE_FILE_PATHS:-}"
+read_file_from_stdin() {
+  if [ -t 0 ]; then return 0; fi
+  local payload
+  payload="$(cat)" || return 0
+  if command -v python3 >/dev/null 2>&1; then
+    python3 - <<'PY' "$payload"
+import json, sys
+try:
+    data = json.loads(sys.argv[1])
+except Exception:
+    sys.exit(0)
+ti = data.get("tool_input", {}) if isinstance(data, dict) else {}
+print(ti.get("file_path") or ti.get("path") or ti.get("filePath") or "")
+PY
+  else
+    printf '%s' "$payload" | grep -oE '"file_path"\s*:\s*"[^"]+"' | head -n 1 \
+      | sed -E 's/.*"file_path"\s*:\s*"([^"]+)"/\1/'
+  fi
+}
+
+FILE="$(read_file_from_stdin)"
+FILE="${FILE:-${CLAUDE_FILE_PATHS:-}}"
 
 case "$FILE" in
   *.dart) ;;
@@ -15,5 +44,8 @@ esac
 if command -v dart >/dev/null 2>&1; then
   dart format "$FILE" >/dev/null 2>&1 || true
 else
-  echo "dart format: skipped (not installed)"
+  # Don't fall back to a project-wide `dart format .`: that formats everything
+  # on every Edit/Write, which is surprising scope creep on a single-file change.
+  # Mention it once so the user knows how to format on demand.
+  echo "dart format: skipped ($FILE will be formatted on the next \`dart format .\`)"
 fi

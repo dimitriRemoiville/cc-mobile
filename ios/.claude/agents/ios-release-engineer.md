@@ -4,6 +4,7 @@ description: Use PROACTIVELY for iOS release tasks — `CFBundleShortVersionStri
 tools: Read, Write, Edit, Grep, Glob, Bash
 skills:
   - ios-app-skeleton
+  - ios-release
 model: sonnet
 ---
 
