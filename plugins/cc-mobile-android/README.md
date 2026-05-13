@@ -56,7 +56,17 @@ Edit the copy to reflect your app's specifics. The template is a starting point,
 
 ## Updating
 
-When a new `.plugin` (or marketplace version) ships, reinstall. Your project's `CLAUDE.md` isn't touched by re-install — update it by hand when the template evolves.
+When a new version ships, reinstall via whichever tool you use:
+
+```bash
+# Claude Code
+/plugin marketplace update cc-mobile
+
+# Copilot CLI
+copilot plugin update cc-mobile-android
+```
+
+Your project's `CLAUDE.md` isn't touched by re-install — update it by hand when the template evolves.
 
 ## Building this plugin from source
 
@@ -71,7 +81,3 @@ The script reads `android/.claude/{skills,agents,commands}` + `android/CLAUDE.md
 ## Why these choices
 
 See [android/README.md](../../android/README.md) in the source repo for the rationale behind the stack picks (Compose-first, Hilt over manual DI, kotlinx.serialization over Moshi/Gson, Room over SQLDelight on Android, Turbine for Flow testing).
-
-## License
-
-MIT.

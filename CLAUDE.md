@@ -26,4 +26,8 @@ See [README.md](README.md) for the cross-stack conventions table and stack layou
 
 ## Validation
 
-Run [scripts/validate.sh](scripts/validate.sh) before committing config changes. It checks agent/command frontmatter and resolves relative paths referenced inside commands.
+Run [scripts/validate.sh](scripts/validate.sh) before committing config changes. It checks agent/command frontmatter, resolves relative paths referenced inside commands, and validates both marketplace manifests (`.claude-plugin/marketplace.json` for Claude Code, `.github/plugin/marketplace.json` for Copilot CLI).
+
+## Dual marketplace
+
+This repo ships plugins for both **Claude Code** and **GitHub Copilot CLI** from the same source. Agent files under `<stack>/.claude/agents/` are plain `.md`; the build script copies them as `.agent.md` in the plugin directory (Copilot CLI format) and as `.md` in the `.plugin` ZIP (Claude Code format). Do not rename the source files.

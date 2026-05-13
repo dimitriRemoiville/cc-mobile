@@ -64,8 +64,13 @@ Edit the copy to reflect your app's specifics (app name, flavors, key feature fo
 
 This plugin is built from the [ClaudeCodeMobile](https://github.com/) monorepo's `flutter/` subfolder. To pull an update:
 
-1. Get the new `.plugin` file.
-2. Reinstall (replaces the old version).
+```bash
+# Claude Code
+/plugin marketplace update cc-mobile
+
+# Copilot CLI
+copilot plugin update cc-mobile-flutter
+```
 
 Your `CLAUDE.md` in the consuming project isn't touched by re-install — update it by hand when the template evolves.
 
@@ -77,12 +82,8 @@ From the `ClaudeCodeMobile/` repo root:
 scripts/build-plugin.sh flutter
 ```
 
-This reads `flutter/.claude/{skills,agents,commands}` + `flutter/CLAUDE.md` and re-packages them into `plugins/cc-mobile-flutter.plugin`. The hand-authored `plugin.json` and this README are preserved across rebuilds.
+This reads `flutter/.claude/{skills,agents,commands}` + `flutter/CLAUDE.md` and re-packages them into `plugins/cc-mobile-flutter/` (directory with `.agent.md` agents for Copilot CLI) and `plugins/cc-mobile-flutter.plugin` (ZIP with `.md` agents for Claude Code). The hand-authored `plugin.json` and this README are preserved across rebuilds.
 
 ## Why these choices
 
 See the [flutter/README.md](../../flutter/README.md) in the source repo for the full rationale (freezed vs Equatable, fpdart vs dartz, typed routes vs string enums, `bloc_concurrency` vs manual flags, `mocktail` only, GetIt scopes over `allowReassignment`).
-
-## License
-
-MIT.

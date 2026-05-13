@@ -57,7 +57,17 @@ Edit the copy to reflect your app's specifics. The template is a starting point,
 
 ## Updating
 
-When a new `.plugin` (or marketplace version) ships, reinstall. Your project's `CLAUDE.md` isn't touched by re-install — update it by hand when the template evolves.
+When a new version ships, reinstall via whichever tool you use:
+
+```bash
+# Claude Code
+/plugin marketplace update cc-mobile
+
+# Copilot CLI
+copilot plugin update cc-mobile-ios
+```
+
+Your project's `CLAUDE.md` isn't touched by re-install — update it by hand when the template evolves.
 
 ## Building this plugin from source
 
@@ -72,7 +82,3 @@ The script reads `ios/.claude/{skills,agents,commands}` + `ios/CLAUDE.md` and re
 ## Why these choices
 
 See [ios/README.md](../../ios/README.md) in the source repo for the rationale (`@Observable` over `ObservableObject`, composition-root DI over a container, Swift Testing over XCTest for new code, `NavigationStack` over `NavigationView`).
-
-## License
-
-MIT.

@@ -54,7 +54,17 @@ Edit the copy to reflect your app's specifics (module names, platforms targeted,
 
 ## Updating
 
-When a new `.plugin` (or marketplace version) ships, reinstall. Your project's `CLAUDE.md` isn't touched by re-install — update it by hand when the template evolves.
+When a new version ships, reinstall via whichever tool you use:
+
+```bash
+# Claude Code
+/plugin marketplace update cc-mobile
+
+# Copilot CLI
+copilot plugin update cc-mobile-kmm
+```
+
+Your project's `CLAUDE.md` isn't touched by re-install — update it by hand when the template evolves.
 
 ## Building this plugin from source
 
@@ -73,7 +83,3 @@ See [kmm/README.md](../../kmm/README.md) in the source repo for the rationale (K
 ## Companion apps
 
 This plugin covers the shared module only. If you're also wiring native Compose and SwiftUI apps, install [cc-mobile-android](../cc-mobile-android) and [cc-mobile-ios](../cc-mobile-ios) for the native-side conventions.
-
-## License
-
-MIT.

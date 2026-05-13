@@ -1,12 +1,11 @@
 {
   "name": "cc-mobile-android",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Opinionated Claude Code setup for Android apps — Kotlin + Jetpack Compose, MVVM + Clean Architecture, Hilt DI, Retrofit + OkHttp + kotlinx.serialization, Room + DataStore. Ships skills, agents, and slash commands including /init-android-app to scaffold a new app end-to-end.",
   "author": {
     "name": "Dimitri Remoiville",
     "email": "dremoiville@palo-it.com"
   },
-  "license": "MIT",
   "keywords": [
     "android",
     "kotlin",
@@ -17,5 +16,8 @@
     "retrofit",
     "room",
     "navigation-compose"
-  ]
+  ],
+  "agents": "agents/",
+  "skills": "skills/",
+  "hooks": "hooks.json"
 }

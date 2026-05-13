@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # scripts/build-plugin.sh
 #
-# Package a stack's .claude/ content as a Claude Code / Cowork plugin.
+# Package a stack's .claude/ content for BOTH marketplaces:
+#   1. Copilot CLI plugin  — directory with .agent.md agent files
+#   2. Claude Code plugin  — .plugin ZIP with .md agent files
 #
 # Usage:
 #   scripts/build-plugin.sh <stack>
@@ -14,12 +16,16 @@
 #     .claude-plugin/plugin.json     # authored once, preserved across rebuilds
 #     README.md                      # authored once, preserved across rebuilds
 #     skills/                        # wiped + refilled from <stack>/.claude/skills
-#     agents/                        # wiped + refilled from <stack>/.claude/agents
+#     agents/                        # wiped + refilled; .agent.md for Copilot CLI
 #     commands/                      # wiped + refilled from <stack>/.claude/commands
 #     hooks/                         # wiped + refilled from <stack>/.claude/hooks
 #     hooks.json                     # copied from <stack>/.claude/hooks.json
 #     CLAUDE.md                      # refilled from <stack>/CLAUDE.md
-#   plugins/cc-mobile-<stack>.plugin # zip of the directory above
+#   plugins/cc-mobile-<stack>.plugin # zip (agents renamed to .md for Claude Code)
+#
+# The plugin directory uses .agent.md extension for agents (Copilot CLI format).
+# The .plugin ZIP renames them to .md (Claude Code format).
+# This allows both marketplaces to work from the same repo.
 #
 # plugin.json is NOT generated here — if missing, the script stops with a clear
 # message. Plugin metadata (name, version, description, keywords) should be
@@ -102,7 +108,15 @@ JSON"
     cp -R "$src/.claude/skills" "$plugin_dir/skills"
   fi
   if [[ -d "$src/.claude/agents" ]]; then
-    cp -R "$src/.claude/agents" "$plugin_dir/agents"
+    mkdir -p "$plugin_dir/agents"
+    # Copy agents with .agent.md extension (Copilot CLI format).
+    # Source files are plain .md; the zip step renames back to .md for Claude Code.
+    for agent_src in "$src/.claude/agents/"*.md; do
+      [[ -f "$agent_src" ]] || continue
+      local base
+      base="$(basename "$agent_src" .md)"
+      cp "$agent_src" "$plugin_dir/agents/${base}.agent.md"
+    done
   fi
   if [[ -d "$src/.claude/commands" ]]; then
     cp -R "$src/.claude/commands" "$plugin_dir/commands"
@@ -138,13 +152,27 @@ JSON"
   # 7. Validate structure
   validate_plugin "$plugin_dir" "$plugin_name"
 
-  # 8. Zip via /tmp/ (outputs folder may have restricted write semantics)
+  # 8. Zip for Claude Code — agents must be .md (not .agent.md) in the archive.
+  #    We stage a temp copy with renamed agents, zip that, then clean up.
+  local tmp_stage="/tmp/${plugin_name}-stage"
   local tmp_zip="/tmp/${plugin_name}.plugin"
-  rm -f "$tmp_zip"
-  (cd "$plugin_dir" && zip -rq "$tmp_zip" . -x '*.DS_Store')
+  rm -rf "$tmp_stage" "$tmp_zip"
+  cp -R "$plugin_dir" "$tmp_stage"
+
+  # Rename .agent.md → .md inside the staged copy (Claude Code format)
+  if [[ -d "$tmp_stage/agents" ]]; then
+    for f in "$tmp_stage/agents/"*.agent.md; do
+      [[ -f "$f" ]] || continue
+      local base
+      base="$(basename "$f" .agent.md)"
+      mv "$f" "$tmp_stage/agents/${base}.md"
+    done
+  fi
+
+  (cd "$tmp_stage" && zip -rq "$tmp_zip" . -x '*.DS_Store')
   mkdir -p "$(dirname "$plugin_zip")"
   cp "$tmp_zip" "$plugin_zip"
-  rm -f "$tmp_zip"
+  rm -rf "$tmp_stage" "$tmp_zip"
 
   info "wrote $plugin_zip"
   echo
@@ -173,13 +201,17 @@ validate_plugin() {
     done < <(find "$plugin_dir/skills" -mindepth 1 -maxdepth 1 -type d -print0)
   fi
 
-  # Every agent / command file has .md extension and frontmatter
-  for dir in agents commands; do
-    [[ -d "$plugin_dir/$dir" ]] || continue
+  # Every agent (.agent.md) and command (.md) file has frontmatter
+  if [[ -d "$plugin_dir/agents" ]]; then
     while IFS= read -r -d '' f; do
       head -n1 "$f" | grep -q '^---' || die "validate: $f missing YAML frontmatter"
-    done < <(find "$plugin_dir/$dir" -mindepth 1 -maxdepth 1 -name '*.md' -print0)
-  done
+    done < <(find "$plugin_dir/agents" -mindepth 1 -maxdepth 1 -name '*.agent.md' -print0)
+  fi
+  if [[ -d "$plugin_dir/commands" ]]; then
+    while IFS= read -r -d '' f; do
+      head -n1 "$f" | grep -q '^---' || die "validate: $f missing YAML frontmatter"
+    done < <(find "$plugin_dir/commands" -mindepth 1 -maxdepth 1 -name '*.md' -print0)
+  fi
 
   info "validated $plugin_name"
 }

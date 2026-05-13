@@ -240,17 +240,31 @@ check_plugin_parity() {
     fi
     local mismatch=0
     local src_dir plug_dir src_names plug_names diff
-    for kind in agents commands; do
-      src_dir="$ROOT/$stack/.claude/$kind"
-      plug_dir="$plugin_root/$kind"
-      src_names=$(cd "$src_dir" 2>/dev/null && find . -maxdepth 1 -name '*.md' | xargs -I{} basename {} | sort || true)
-      plug_names=$(cd "$plug_dir" 2>/dev/null && find . -maxdepth 1 -name '*.md' | xargs -I{} basename {} | sort || true)
-      if [[ "$src_names" != "$plug_names" ]]; then
-        diff=$(diff <(echo "$src_names") <(echo "$plug_names") | tr '\n' ' ')
-        say_err "plugins/cc-mobile-$stack/$kind: file-set drift vs source (plugin rebuild needed): $diff"
-        mismatch=$((mismatch + 1))
-      fi
-    done
+
+    # Agents: source is .md, plugin uses .agent.md (Copilot CLI format).
+    # Compare by stripping extensions to base names.
+    src_dir="$ROOT/$stack/.claude/agents"
+    plug_dir="$plugin_root/agents"
+    src_names=$(cd "$src_dir" 2>/dev/null && find . -maxdepth 1 -name '*.md' | xargs -I{} basename {} .md | sort || true)
+    plug_names=$(cd "$plug_dir" 2>/dev/null && find . -maxdepth 1 -name '*.agent.md' | xargs -I{} basename {} .agent.md | sort || true)
+    if [[ "$src_names" != "$plug_names" ]]; then
+      diff=$(diff <(echo "$src_names") <(echo "$plug_names") | tr '\n' ' ')
+      say_err "plugins/cc-mobile-$stack/agents: file-set drift vs source (plugin rebuild needed): $diff"
+      mismatch=$((mismatch + 1))
+    fi
+
+    # Commands: both use .md
+    src_dir="$ROOT/$stack/.claude/commands"
+    plug_dir="$plugin_root/commands"
+    src_names=$(cd "$src_dir" 2>/dev/null && find . -maxdepth 1 -name '*.md' | xargs -I{} basename {} | sort || true)
+    plug_names=$(cd "$plug_dir" 2>/dev/null && find . -maxdepth 1 -name '*.md' | xargs -I{} basename {} | sort || true)
+    if [[ "$src_names" != "$plug_names" ]]; then
+      diff=$(diff <(echo "$src_names") <(echo "$plug_names") | tr '\n' ' ')
+      say_err "plugins/cc-mobile-$stack/commands: file-set drift vs source (plugin rebuild needed): $diff"
+      mismatch=$((mismatch + 1))
+    fi
+
+    # Skills: compare directory names
     src_dir="$ROOT/$stack/.claude/skills"
     plug_dir="$plugin_root/skills"
     src_names=$(cd "$src_dir" 2>/dev/null && find . -mindepth 1 -maxdepth 1 -type d | xargs -I{} basename {} | sort || true)
@@ -260,6 +274,7 @@ check_plugin_parity() {
       say_err "plugins/cc-mobile-$stack/skills: dir-set drift vs source (plugin rebuild needed): $diff"
       mismatch=$((mismatch + 1))
     fi
+
     if [[ $mismatch -eq 0 ]]; then
       say_ok "plugins/cc-mobile-$stack: agents/commands/skills match source"
     fi
@@ -375,6 +390,54 @@ check_agent_skills_resolve() {
   done
 }
 
+# Validate .github/plugin/marketplace.json:
+#   - File exists
+#   - Every plugin entry has name + source
+#   - source paths resolve to plugin directories on disk
+#   - Plugin names match the directory names
+check_marketplace_json() {
+  local mf="$ROOT/.github/plugin/marketplace.json"
+  if [[ ! -f "$mf" ]]; then
+    say_warn "missing .github/plugin/marketplace.json (Copilot CLI marketplace won't work)"
+    return
+  fi
+
+  # Parse the plugins array properly: extract name+source pairs from plugin entries.
+  # We use python3 (available on macOS) for reliable JSON parsing rather than
+  # fragile grep-based extraction.
+  local flagged=0
+  local entries
+  entries=$(python3 -c "
+import json, sys
+with open('$mf') as f:
+    data = json.load(f)
+for p in data.get('plugins', []):
+    print(p.get('name', '') + '\t' + p.get('source', ''))
+" 2>/dev/null)
+
+  if [[ -z "$entries" ]]; then
+    say_err "marketplace.json: failed to parse or no plugins defined"
+    return
+  fi
+
+  while IFS=$'\t' read -r name source; do
+    [[ -z "$name" || -z "$source" ]] && continue
+    local resolved="${source#./}"
+    if [[ ! -d "$ROOT/$resolved" ]]; then
+      say_err "marketplace.json: plugin \"$name\" source dir does not exist: $resolved"
+      flagged=$((flagged + 1))
+    fi
+    if [[ -d "$ROOT/$resolved" ]] && [[ ! -f "$ROOT/$resolved/.claude-plugin/plugin.json" ]] && [[ ! -f "$ROOT/$resolved/plugin.json" ]]; then
+      say_err "marketplace.json: plugin \"$name\" has no plugin.json manifest"
+      flagged=$((flagged + 1))
+    fi
+  done <<<"$entries"
+
+  if [[ $flagged -eq 0 ]]; then
+    say_ok "marketplace.json: all plugin entries resolve"
+  fi
+}
+
 # ---------- main ----------
 
 bold "validate.sh — scanning .claude/ content across ${STACKS[*]}"; echo
@@ -416,6 +479,7 @@ check_plugin_parity
 check_skill_prefixes
 check_agent_prefixes
 check_agent_skills_resolve
+check_marketplace_json
 echo
 
 bold "summary"; echo

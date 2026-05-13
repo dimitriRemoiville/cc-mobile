@@ -2,7 +2,19 @@
 
 All notable changes to this repo's Claude Code configurations are logged here. Dates are UTC. See `git log` for per-change rationale.
 
-## [Unreleased]
+## [0.2.0] — 2026-05-13
+
+### Added
+
+- **Copilot CLI marketplace support.** The repo now ships a `.github/plugin/marketplace.json` alongside the existing `.claude-plugin/marketplace.json`, making the same four plugins installable from both Claude Code and GitHub Copilot CLI.
+- `build-plugin.sh` produces dual output per stack: the plugin directory contains `.agent.md` files (Copilot CLI format), while the `.plugin` ZIP contains `.md` files (Claude Code format).
+- `validate.sh` gains a `check_marketplace_json` step that parses `.github/plugin/marketplace.json` and verifies every plugin entry resolves to a directory with a `plugin.json` manifest.
+- `plugin.json` manifests now declare `agents`, `skills`, and `hooks` component path fields explicitly for Copilot CLI discoverability.
+
+### Changed
+
+- Agent files inside `plugins/cc-mobile-*/agents/` are now named `*.agent.md` (was `*.md`). Source files under `<stack>/.claude/agents/` remain `.md` — the rename happens at build time.
+- `validate.sh` plugin parity check compares agent base names across the `.md` → `.agent.md` extension difference.
 
 ## [0.1.0] — 2026-05-13
 
@@ -36,5 +48,5 @@ First tagged release. Four per-stack configurations (Android, iOS, KMM, Flutter)
 - Flutter `/init-flutter-app` referenced a leaked sandbox path and used `$1` instead of `$ARGUMENTS`.
 - Removed `.DS_Store` files and stale permission entries (`Read`/`Write`/`Edit` listed as Bash patterns) from `settings.json`.
 
-[Unreleased]: https://github.com/dimitriRemoiville/ClaudeCodeMobile/compare/v0.1.0...HEAD
+[0.2.0]: https://github.com/dimitriRemoiville/ClaudeCodeMobile/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/dimitriRemoiville/ClaudeCodeMobile/releases/tag/v0.1.0

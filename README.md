@@ -24,11 +24,11 @@ This folder holds per-stack Claude Code configurations. Each subfolder is a self
 
 Claude Code picks up `CLAUDE.md` and everything under `.claude/` automatically when you open the folder.
 
-Alongside the stack folders, the repo also ships a Claude Code plugin for each stack under [`plugins/`](./plugins) and a marketplace manifest at [`.claude-plugin/marketplace.json`](./.claude-plugin/marketplace.json). See [Distribution via marketplace](#distribution-via-marketplace).
+Alongside the stack folders, the repo also ships a Claude Code plugin for each stack under [`plugins/`](./plugins) and marketplace manifests for both Claude Code ([`.claude-plugin/marketplace.json`](./.claude-plugin/marketplace.json)) and Copilot CLI ([`.github/plugin/marketplace.json`](./.github/plugin/marketplace.json)). See [Distribution via marketplace](#distribution-via-marketplace).
 
 ## Using a stack
 
-Option A — **install the plugin (recommended for teams).** Each stack ships as a Claude Code plugin via the `cc-mobile` marketplace. See [Distribution via marketplace](#distribution-via-marketplace) below. This gives you the skills, agents, and slash commands (including `/init-<stack>-app`) without copying files around.
+Option A — **install the plugin (recommended for teams).** Each stack ships as a plugin via the `cc-mobile` marketplace, available for both **Claude Code** and **GitHub Copilot CLI**. See [Distribution via marketplace](#distribution-via-marketplace) below. This gives you the skills, agents, and slash commands (including `/init-<stack>-app`) without copying files around.
 
 Option B — **start a project here.** Initialize the project inside the corresponding subfolder, then open that subfolder in Claude Code. `/init-<stack>-app` will scaffold the whole app (folders, manifests, core/ base classes, routing, tests) with a few clarifying questions.
 
@@ -36,7 +36,12 @@ Option C — **bring your own project.** Copy the subfolder's `CLAUDE.md` and `.
 
 ## Distribution via marketplace
 
-This repo is itself a Claude Code plugin marketplace. `.claude-plugin/marketplace.json` at the repo root advertises the four stack plugins in [`plugins/`](./plugins).
+This repo is a plugin marketplace for **both Claude Code and GitHub Copilot CLI**. Two marketplace manifests point to the same plugin directories under [`plugins/`](./plugins):
+
+- `.claude-plugin/marketplace.json` — Claude Code
+- `.github/plugin/marketplace.json` — Copilot CLI
+
+### Claude Code
 
 **Coworkers install once:**
 
@@ -48,7 +53,17 @@ This repo is itself a Claude Code plugin marketplace. `.claude-plugin/marketplac
 /plugin install cc-mobile-flutter@cc-mobile
 ```
 
-Installing just the stacks they work with is fine — they're independent.
+### Copilot CLI
+
+```bash
+copilot plugin marketplace add <org>/ClaudeCodeMobile
+copilot plugin install cc-mobile-android@cc-mobile
+copilot plugin install cc-mobile-ios@cc-mobile
+copilot plugin install cc-mobile-kmm@cc-mobile
+copilot plugin install cc-mobile-flutter@cc-mobile
+```
+
+Installing just the stacks you work with is fine — they're independent.
 
 ### Working on a KMM project
 
@@ -70,7 +85,11 @@ A few things to know:
 **Getting updates:**
 
 ```text
+# Claude Code
 /plugin marketplace update cc-mobile
+
+# Copilot CLI
+copilot plugin update cc-mobile-android
 ```
 
 Re-running `install` on an updated plugin refreshes its skills, agents, and commands. The stack's `CLAUDE.md` is shipped inside the plugin; if a coworker has dropped a copy into their project root, they should re-copy it when the template evolves (see each plugin's README for the copy step).
@@ -79,10 +98,10 @@ Re-running `install` on an updated plugin refreshes its skills, agents, and comm
 
 1. Edit the stack under `<stack>/.claude/` and `<stack>/CLAUDE.md` in this repo.
 2. Bump `version` in the corresponding `plugins/cc-mobile-<stack>/.claude-plugin/plugin.json`.
-3. Run `scripts/build-plugin.sh <stack>` (or `all`) to refresh `plugins/cc-mobile-<stack>/` and re-zip the `.plugin` artifact.
-4. Commit and push. Coworkers pick up the change via `/plugin marketplace update`.
+3. Run `scripts/build-plugin.sh <stack>` (or `all`) to refresh `plugins/cc-mobile-<stack>/` (with `.agent.md` agents for Copilot CLI) and re-zip the `.plugin` artifact (with `.md` agents for Claude Code).
+4. Commit and push. Coworkers pick up the change via `/plugin marketplace update` (Claude Code) or `copilot plugin update` (Copilot CLI).
 
-Hand-authored files (`plugin.json`, each plugin's `README.md`, and this repo's `marketplace.json`) are preserved across rebuilds — only `skills/`, `agents/`, `commands/`, and `CLAUDE.md` are refreshed from the source stack folder.
+Hand-authored files (`plugin.json`, each plugin's `README.md`, and both `marketplace.json` files) are preserved across rebuilds — only `skills/`, `agents/`, `commands/`, and `CLAUDE.md` are refreshed from the source stack folder.
 
 ## Adding a new mobile stack later
 
