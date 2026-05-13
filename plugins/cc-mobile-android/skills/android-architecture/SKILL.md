@@ -86,14 +86,15 @@ The mapper sits in `OrderDto.kt` next to the DTO it transforms. Promote to a `<f
 
 What lives here:
 - **Composables** — the Route/Screen split described in the `compose-ui` skill.
-- **ViewModels** — expose `StateFlow<UiState>` and `Channel<UiEvent>`, call use cases (not repositories directly, unless the action is genuinely trivial).
-- **UiState / UiAction / UiEvent** — the contract between Composable and ViewModel.
+- **ViewModels** — expose `StateFlow<UiState>` and (when needed) `Channel<UiEvent>` for one-shot effects; call use cases (not repositories directly, unless the action is genuinely trivial).
+- **UiState / UiEvent** — the contract between Composable and ViewModel. **User actions are discrete public functions on the ViewModel** (`fun submit(...)`, `fun retry()`), and the Composable takes one lambda per action — the shape Google's [Now in Android](https://github.com/android/nowinandroid) uses, and the canonical MVVM shape. Escalate to a sealed `UiAction` + a single `onAction(action: UiAction)` callback only when the screen has ≥5 distinct interactions and a flat lambda surface would be unwieldy. That's an MVI shape; this project is MVVM by default.
 - **Navigation** — route declarations live with the feature; the top-level `AppNavGraph` in `core/navigation/` composes them.
 
 ```kotlin
 @HiltViewModel
 class OrderViewModel @Inject constructor(
     private val submit: SubmitOrderUseCase,
+    private val analytics: AnalyticsTracker,
 ) : ViewModel() {
     private val _state = MutableStateFlow<OrderUiState>(OrderUiState.Loading)
     val state: StateFlow<OrderUiState> = _state.asStateFlow()
@@ -101,7 +102,10 @@ class OrderViewModel @Inject constructor(
     private val _events = Channel<OrderEvent>(Channel.BUFFERED)
     val events = _events.receiveAsFlow()
 
-    fun onAction(action: OrderAction) { ... }
+    init { analytics.track(AnalyticsEvent.OrderViewed) }
+
+    fun submit(draft: OrderDraft) { ... }
+    fun retry() { ... }
 }
 ```
 

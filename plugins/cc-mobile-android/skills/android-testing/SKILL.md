@@ -88,6 +88,23 @@ Rules:
 - `StandardTestDispatcher` (not `UnconfinedTestDispatcher`) unless you have a specific reason.
 - Use **Turbine** — don't poll `viewModel.state.value`.
 
+## Analytics in ViewModel tests
+
+Every `<Feature>ViewModel` in this project injects `AnalyticsTracker` and fires the screen-viewed event from `init { }`. Mock the tracker and assert it fired exactly once during VM construction.
+
+```kotlin
+private val analytics: AnalyticsTracker = mockk(relaxed = true)
+
+@Test
+fun `fires FeedViewed when constructed`() = runTest(dispatcher) {
+    FeedViewModel(getFeed, analytics)
+
+    verify(exactly = 1) { analytics.track(AnalyticsEvent.FeedViewed) }
+}
+```
+
+Use `relaxed = true` so unrelated tracker calls in the rest of the test don't need `every { ... } returns Unit` plumbing. If a test asserts a *specific* downstream event (e.g. "tapping retry fires FeedRetried"), use `verify(exactly = 1) { analytics.track(AnalyticsEvent.FeedRetried) }` and keep the relaxed mock — no spy needed.
+
 ## Flow tests with Turbine
 
 ```kotlin

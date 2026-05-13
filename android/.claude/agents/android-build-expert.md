@@ -4,6 +4,8 @@ description: Use PROACTIVELY for any Gradle, build, dependency, or toolchain iss
 tools: Read, Write, Edit, Grep, Glob, Bash
 skills:
   - android-app-skeleton
+  - kotlin-style
+  - hilt-di
 model: sonnet
 ---
 

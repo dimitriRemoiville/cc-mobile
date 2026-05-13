@@ -8,7 +8,7 @@ You are scaffolding a new feature called **$ARGUMENTS**.
 
 Follow this sequence — do not skip steps:
 
-1. **Load context.** Read `CLAUDE.md` and skim `.claude/skills/android-architecture/SKILL.md`, `.claude/skills/hilt-di/SKILL.md`, and `.claude/skills/compose-ui/SKILL.md`.
+1. **Load context.** Read `CLAUDE.md` and skim `.claude/skills/android-architecture/SKILL.md`, `.claude/skills/android-app-skeleton/SKILL.md` (the canonical feature shape lives there), `.claude/skills/hilt-di/SKILL.md`, `.claude/skills/retrofit-networking/SKILL.md`, and `.claude/skills/compose-ui/SKILL.md`.
 2. **Scan the existing codebase** for the nearest similar feature. Match its package structure, naming, and module conventions. Do not introduce a new pattern unless there's a clear reason.
 3. **Produce a short plan** (5–10 lines) listing every file you'll create or touch. Confirm with the user before writing if the plan introduces new modules or changes build files.
 4. **Generate the feature** with this **feature-first** structure (per `android-architecture` and `android-app-skeleton`; layer-first packaging is rejected here on purpose):
@@ -26,14 +26,17 @@ Follow this sequence — do not skip steps:
    │   └── usecase/Get<Feature>UseCase.kt      # operator suspend fun invoke(...): Outcome<...>
    └── ui/
        ├── <Feature>UiState.kt
-       ├── <Feature>Action.kt
-       ├── <Feature>Event.kt
+       ├── <Feature>Event.kt                   # one-shot effects via Channel (navigation, snackbar) — keep only if the screen needs them
        ├── <Feature>ViewModel.kt
        ├── <Feature>Screen.kt                  # stateless Screen + Route wrapper + Preview(s)
        └── <Feature>Route.kt                   # @Serializable destination (one file per feature)
    ```
 
    Promote `data/mapper/` to its own package only when several DTOs map to the same domain type — otherwise keep mapping functions colocated with the DTO. Use `core/data/network/Outcomes.kt` (`toOutcome` + `toDomainError`) for the `Result → Outcome` conversion in the repository implementation; never open-code `runCatching { ... }.fold(...)` (it swallows `CancellationException`).
+
+   The `<Feature>ViewModel` exposes **discrete public functions** for user actions (`fun retry()`, `fun submit(...)`); the Composable takes one lambda per action (`onRetry: () -> Unit`). Matches Google's [Now in Android](https://github.com/android/nowinandroid) and the official MVVM guidance. Escalate to a sealed `<Feature>Action.kt` + a single `onAction: (Action) -> Unit` callback only when the screen has ≥5 distinct interactions and the Composable signature would otherwise balloon (that's an MVI shape; this project is MVVM by default).
+
+   The `<Feature>ViewModel` injects `AnalyticsTracker` as a `private val` and fires the screen-viewed event from `init { }` — same shape as `feed/ui/FeedViewModel.kt` in the scaffold.
 
 5. **Wire navigation** — register the feature's `@Serializable` route in `core/navigation/AppNavGraph.kt`. Don't leave the screen unreachable.
 6. **Tests.** Create at least:

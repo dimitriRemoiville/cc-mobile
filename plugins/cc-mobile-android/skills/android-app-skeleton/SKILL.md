@@ -41,14 +41,19 @@ app/src/main/java/{{PACKAGE_PATH}}/
 │   ├── domain/                       # Outcome, DomainError, analytics interface (framework-free)
 │   ├── data/                         # networking + analytics impls (knows frameworks)
 │   ├── ui/theme/                     # AppTheme, color schemes
-│   ├── ui/common/                    # shared composables (TrackScreen, ...)
 │   └── navigation/                   # AppNavGraph (top-level routes)
-├── home/ui/                          # the bottom-nav shell feature
-├── feed/ui/                          # tab feature
-└── profile/ui/                       # tab feature
+├── home/ui/                          # the bottom-nav shell feature (no data/domain — pure UI)
+├── feed/                             # tab feature, full feature-first shape
+│   ├── data/{repository,di}/
+│   ├── domain/{model,repository,usecase}/
+│   └── ui/                           # UiState, ViewModel, Screen, Route
+└── profile/                          # tab feature, full feature-first shape
+    ├── data/{repository,di}/
+    ├── domain/{model,repository,usecase}/
+    └── ui/                           # UiState, ViewModel, Screen, Route
 ```
 
-Each new feature added later mirrors `home/`, `feed/`, `profile/` — `<feature>/{ui,domain,data}/` with only the layers it needs. The shell feature (`home/`) knows about its tab features; tab features don't know about each other.
+Each new feature added later mirrors `feed/` and `profile/` — `<feature>/{ui,domain,data}/` with only the layers it needs. The shell feature (`home/`) knows about its tab features; tab features don't know about each other. Feed and Profile in the scaffold each ship the full three-layer shape so the result lines up with what `/new-feature` and `/add-screen` produce — no special-casing the first two tabs.
 
 Why feature-first inside a single module?
 - **Code locality.** Everything for a screen — UI, state, repository, mapping — lives next to itself. New contributors find code by feature name, not by guessing which `data/` subfolder.
@@ -63,9 +68,9 @@ Why feature-first inside a single module?
 4. Write `AndroidManifest.xml`, `strings.xml` (with tab labels), themes, launcher icons.
 5. Write `core/domain/` — `Outcome`, `DomainError`, **`analytics/AnalyticsTracker` interface + `AnalyticsEvent` sealed taxonomy** (always emitted; the analytics interface is part of the domain so use cases / VMs depend on the abstraction even when Firebase is absent).
 6. Write `core/data/` — sample API + `RemoteDataSource`, **`Outcomes.kt` (canonical `Result<T>.toOutcome(...)` adapter + `toDomainError(...)` mapper)**, **`network/di/NetworkModule.kt` (Hilt providers for `OkHttpClient`, `Json`, `Retrofit`, `SampleApi` — DEBUG-gated logging; one source of truth for the HTTP stack so Coil reuses the same client)**, **`analytics/` module wiring `AnalyticsTracker` to `NoopAnalyticsTracker` (always) or `FirebaseAnalyticsTracker` (`INCLUDE_FIREBASE`)**. Add `core/data/persistence/` + `core/data/datastore/` (with their own DI modules) behind their flags.
-7. Write `core/ui/theme/AppTheme.kt`, `core/ui/common/TrackScreen.kt`, and `core/navigation/AppNavGraph.kt` (top-level nav with `Home` as start destination).
-8. Write the features — `{{APP_CLASS}}` Application (Hilt + `SingletonImageLoader.Factory` for Coil), `MainActivity`, **`home/ui/{HomeScreen,HomeViewModel}.kt` (bottom NavigationBar + nested NavHost; `TrackScreen(HomeViewed)` at the top demonstrates the helper)**, `feed/ui/{FeedScreen,FeedViewModel}.kt`, `profile/ui/{ProfileScreen,ProfileViewModel}.kt`.
-9. Write `:app` tests — `core/domain/OutcomeMapTest.kt`, `feed/ui/FeedViewModelTest.kt` (mocks `AnalyticsTracker`), plus the Compose UI tests `feed/ui/FeedScreenTest.kt` and `profile/ui/ProfileScreenTest.kt` under `app/src/androidTest/`. The androidTest pair anchors the Route + Screen split: each test drives the **stateless** `<Feature>Screen` directly, not the Route — no Hilt setup needed.
+7. Write `core/ui/theme/AppTheme.kt` and `core/navigation/AppNavGraph.kt` (top-level nav with `Home` as start destination).
+8. Write the features — `{{APP_CLASS}}` Application (Hilt + `SingletonImageLoader.Factory` for Coil), `MainActivity`, **`home/ui/{HomeScreen,HomeViewModel}.kt` (bottom NavigationBar + nested NavHost; VM fires `AnalyticsEvent.HomeViewed` from `init { }`)**, and the two demo tabs in their full feature-first shape: `feed/{data,domain,ui}/` and `profile/{data,domain,ui}/` — each tab ships a `RepositoryImpl` (stub data wrapped in `Outcome.Success`), a domain `Repository` interface + `UseCase`, a Hilt `<Feature>DataModule` binding the impl, and `UiState` / `ViewModel` / `Screen` / `Route` under `ui/`. ViewModels expose user actions as discrete public functions (`fun retry()`, `fun submit(...)`), matching Google's [Now in Android](https://github.com/android/nowinandroid); escalate to a sealed `<Screen>Action.kt` only when a screen has ≥5 distinct interactions.
+9. Write `:app` tests — `core/domain/OutcomeMapTest.kt`, `feed/ui/FeedViewModelTest.kt` and `profile/ui/ProfileViewModelTest.kt` (each mocks `AnalyticsTracker` + the feature use case and verifies the `init { }` analytics event fires), plus the Compose UI tests `feed/ui/FeedScreenTest.kt` and `profile/ui/ProfileScreenTest.kt` under `app/src/androidTest/`. The androidTest pair anchors the Route + Screen split: each test drives the **stateless** `<Feature>Screen` directly, not the Route — no Hilt setup needed.
 10. **Compile + assemble + run unit tests.** Run `:app:compileDebugKotlin`, then **`:app:assembleDevDebug`** (the full assemble — this is the gate that catches missing Gradle plugins, unresolved deps, manifest merger errors), then `:app:testDebugUnitTest`. `compileDebugKotlin` alone is not sufficient. The Compose UI tests run via `:app:connectedDebugAndroidTest` when an emulator/device is attached; if none is available, leave them ready-to-run rather than blocking the scaffold.
 11. Emit manual setup notes (signing, flavor stubs, Firebase files).
 
@@ -111,7 +116,7 @@ plugins {
 }
 ```
 
-`org.jetbrains.kotlin.android` is **not** declared at the root: AGP 9 ships a built-in Kotlin runtime and registers the `kotlin` extension itself; applying the standalone plugin throws `Cannot add extension with name 'kotlin', as there is an extension already registered`. `android.library` / `kotlin.jvm` are intentionally omitted — there are no library / pure-JVM modules yet. Add aliases when you extract `:core:*` modules.
+`org.jetbrains.kotlin.android` is **not** declared at the root: AGP 9 ships a built-in Kotlin runtime and registers the `kotlin` extension itself; applying the standalone plugin throws `Cannot add extension with name 'kotlin', as there is an extension already registered`. `android.library` / `kotlin.jvm` aliases are intentionally omitted from the catalog too — there are no library / pure-JVM modules yet. Add aliases when you extract `:core:*` modules (a commented stub at the bottom of `[plugins]` in `libs.versions.toml` marks where they go).
 
 > **AGP 8.x note.** If you've pinned to AGP 8.x for some reason, you must add `alias(libs.plugins.kotlin.android) apply false` here and the matching `alias(libs.plugins.kotlin.android)` in `app/build.gradle.kts`. The rest of the templates assume AGP 9.
 
@@ -243,12 +248,10 @@ compose-ui-test-manifest = { module = "androidx.compose.ui:ui-test-manifest" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
-android-library = { id = "com.android.library", version.ref = "agp" }
 # `kotlin-android` is intentionally absent: AGP 9 has built-in Kotlin and registering
 # the standalone plugin throws "Cannot add extension with name 'kotlin'". Re-add it
 # (and the matching `alias(libs.plugins.kotlin.android)` in `app/build.gradle.kts`)
 # only if you've intentionally pinned AGP 8.x.
-kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 # Compose Compiler is its own Gradle plugin since Kotlin 2.0. The plugin alias must be
 # applied on every module that sets `buildFeatures.compose = true` — the binary is
@@ -260,6 +263,10 @@ hilt = { id = "com.google.dagger.hilt.android", version.ref = "hilt" }
 # them and the catalog stays consistent.
 google-services = { id = "com.google.gms.google-services", version.ref = "google-services" }
 firebase-crashlytics = { id = "com.google.firebase.crashlytics", version.ref = "firebase-crashlytics-plugin" }
+
+# Re-add when extracting :core:* modules:
+# android-library = { id = "com.android.library", version.ref = "agp" }
+# kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 ```
 
 **Resolution rule: latest stable, every time.** Resolve each `[versions]` ref to the newest stable (no `-alpha`, `-beta`, `-RC`, `-dev`, `-SNAPSHOT`) by reading the registry's `maven-metadata.xml` at scaffold time. The command `/init-android-app` walks the catalog and fetches each one — see its **Phase 1.5** for the concrete URL list. Do not hard-code a number in this skill: hard-coded numbers age, and the user explicitly wants this command to work over time without churn.
@@ -671,27 +678,32 @@ fun AppNavGraph() {
 
 ### `app/src/main/java/{{PACKAGE_PATH}}/home/ui/HomeViewModel.kt`
 
-A minimal ViewModel that injects `AnalyticsTracker` so `HomeScreen` can use the `TrackScreen` Compose helper. The tracker is exposed as a public `val` so the helper can read it inline — that's mildly unusual (VMs normally don't surface their deps) but it's the cleanest way to demonstrate `TrackScreen` without inventing a `CompositionLocal` for analytics. For richer screens, prefer firing analytics from the VM and exposing only state/events.
+A minimal ViewModel that injects `AnalyticsTracker` privately and fires `AnalyticsEvent.HomeViewed` from `init { }`. This is the **one canonical pattern** for screen-viewed analytics in the scaffold — private dependency, event from `init { }`. `feed/ui/FeedViewModel.kt` and `profile/ui/ProfileViewModel.kt` follow the same shape; copy any of the three when adding a new screen.
 
 ```kotlin
 package {{PACKAGE_ID}}.home.ui
 
 import androidx.lifecycle.ViewModel
 import dagger.hilt.android.lifecycle.HiltViewModel
+import {{PACKAGE_ID}}.core.domain.analytics.AnalyticsEvent
 import {{PACKAGE_ID}}.core.domain.analytics.AnalyticsTracker
 import javax.inject.Inject
 
 @HiltViewModel
 class HomeViewModel @Inject constructor(
-    val analytics: AnalyticsTracker,
-) : ViewModel()
+    private val analytics: AnalyticsTracker,
+) : ViewModel() {
+    init {
+        analytics.track(AnalyticsEvent.HomeViewed)
+    }
+}
 ```
 
 ### `app/src/main/java/{{PACKAGE_PATH}}/home/ui/HomeScreen.kt`
 
 Hosts the bottom `NavigationBar` and the *nested* tab `NavHost`. Tabs are typed `@Serializable` destinations. Selection is computed from the current back-stack entry via `NavDestination.hasRoute(KClass)` — no string comparisons, no hand-rolled selected-index state. The shell feature is the one place that knows about its tab features (`feed/`, `profile/`); tab features don't know about each other.
 
-`TrackScreen` fires `AnalyticsEvent.HomeViewed` once per entry into composition — exactly the pattern recommended in the analytics section for richer screens. Feed and Profile track from VM `init` (simpler; OK for trivial screens); `HomeScreen` uses the helper so the scaffold demonstrates both shapes.
+The `HomeViewed` analytics event fires from `HomeViewModel.init { }` — the same shape Feed and Profile use. `hiltViewModel()` is called here purely to construct the VM (and thereby fire the event) even though `HomeScreen` doesn't read any state from it.
 
 ```kotlin
 package {{PACKAGE_ID}}.home.ui
@@ -719,8 +731,6 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import kotlinx.serialization.Serializable
 import {{PACKAGE_ID}}.R
-import {{PACKAGE_ID}}.core.domain.analytics.AnalyticsEvent
-import {{PACKAGE_ID}}.core.ui.common.TrackScreen
 import {{PACKAGE_ID}}.feed.ui.FeedRoute
 import {{PACKAGE_ID}}.profile.ui.ProfileRoute
 
@@ -736,9 +746,8 @@ private data class HomeTab(
 )
 
 @Composable
-fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
-    TrackScreen(viewModel.analytics, AnalyticsEvent.HomeViewed)
-
+fun HomeScreen(@Suppress("UNUSED_PARAMETER") viewModel: HomeViewModel = hiltViewModel()) {
+    // The VM is constructed via hiltViewModel() so its init { } fires AnalyticsEvent.HomeViewed.
     val nav = rememberNavController()
     val backStack by nav.currentBackStackEntryAsState()
     val current = backStack?.destination
@@ -781,92 +790,431 @@ fun HomeScreen(viewModel: HomeViewModel = hiltViewModel()) {
 }
 ```
 
-### `app/src/main/java/{{PACKAGE_PATH}}/feed/ui/FeedScreen.kt`
+### Feed feature
+
+Feed ships the full feature-first shape — `data/` + `domain/` + `ui/`. Repository returns hard-coded stub data wrapped in `Outcome.Success`; replace with a real source when wiring a backend. The structure matches what `/new-feature` produces so adding the next feature is a copy-paste of this layout.
+
+#### `app/src/main/java/{{PACKAGE_PATH}}/feed/domain/model/FeedItem.kt`
+
+```kotlin
+package {{PACKAGE_ID}}.feed.domain.model
+
+data class FeedItem(
+    val id: String,
+    val title: String,
+)
+```
+
+#### `app/src/main/java/{{PACKAGE_PATH}}/feed/domain/repository/FeedRepository.kt`
+
+```kotlin
+package {{PACKAGE_ID}}.feed.domain.repository
+
+import {{PACKAGE_ID}}.core.domain.Outcome
+import {{PACKAGE_ID}}.feed.domain.model.FeedItem
+
+interface FeedRepository {
+    suspend fun getFeed(): Outcome<List<FeedItem>>
+}
+```
+
+#### `app/src/main/java/{{PACKAGE_PATH}}/feed/domain/usecase/GetFeedUseCase.kt`
+
+```kotlin
+package {{PACKAGE_ID}}.feed.domain.usecase
+
+import {{PACKAGE_ID}}.core.domain.Outcome
+import {{PACKAGE_ID}}.feed.domain.model.FeedItem
+import {{PACKAGE_ID}}.feed.domain.repository.FeedRepository
+import javax.inject.Inject
+
+class GetFeedUseCase @Inject constructor(
+    private val repository: FeedRepository,
+) {
+    suspend operator fun invoke(): Outcome<List<FeedItem>> = repository.getFeed()
+}
+```
+
+#### `app/src/main/java/{{PACKAGE_PATH}}/feed/data/repository/FeedRepositoryImpl.kt`
+
+```kotlin
+package {{PACKAGE_ID}}.feed.data.repository
+
+import {{PACKAGE_ID}}.core.domain.Outcome
+import {{PACKAGE_ID}}.feed.domain.model.FeedItem
+import {{PACKAGE_ID}}.feed.domain.repository.FeedRepository
+import javax.inject.Inject
+
+class FeedRepositoryImpl @Inject constructor() : FeedRepository {
+    // Stub data — replace with real source (Retrofit + RemoteDataSource or Room).
+    override suspend fun getFeed(): Outcome<List<FeedItem>> = Outcome.Success(
+        listOf(
+            FeedItem(id = "1", title = "Welcome to your new app"),
+            FeedItem(id = "2", title = "Edit FeedRepositoryImpl to wire a real source"),
+            FeedItem(id = "3", title = "Tap retry to re-run the use case"),
+        ),
+    )
+}
+```
+
+#### `app/src/main/java/{{PACKAGE_PATH}}/feed/data/di/FeedDataModule.kt`
+
+```kotlin
+package {{PACKAGE_ID}}.feed.data.di
+
+import dagger.Binds
+import dagger.Module
+import dagger.hilt.InstallIn
+import dagger.hilt.components.SingletonComponent
+import {{PACKAGE_ID}}.feed.data.repository.FeedRepositoryImpl
+import {{PACKAGE_ID}}.feed.domain.repository.FeedRepository
+
+@Module
+@InstallIn(SingletonComponent::class)
+abstract class FeedDataModule {
+    @Binds
+    abstract fun bindFeedRepository(impl: FeedRepositoryImpl): FeedRepository
+}
+```
+
+#### `app/src/main/java/{{PACKAGE_PATH}}/feed/ui/FeedUiState.kt`
+
+```kotlin
+package {{PACKAGE_ID}}.feed.ui
+
+import {{PACKAGE_ID}}.feed.domain.model.FeedItem
+
+sealed interface FeedUiState {
+    data object Loading : FeedUiState
+    data class Error(val message: String) : FeedUiState
+    data class Success(val items: List<FeedItem>) : FeedUiState
+}
+```
+
+#### `app/src/main/java/{{PACKAGE_PATH}}/feed/ui/FeedRoute.kt`
+
+The typed `@Serializable` destination consumed by `AppNavGraph` / `HomeScreen`. Lives inside the feature's `ui/` package so the nav graph imports it from `feed.ui` — never from `core/navigation/`.
+
+```kotlin
+package {{PACKAGE_ID}}.feed.ui
+
+import kotlinx.serialization.Serializable
+
+@Serializable data object FeedRoute
+```
+
+#### `app/src/main/java/{{PACKAGE_PATH}}/feed/ui/FeedViewModel.kt`
+
+Drives `Loading → Success/Error` from the use case, fires `AnalyticsEvent.FeedViewed` from `init { }` (canonical shape), exposes `retry()` as a discrete public function (no sealed `Action` — that's an MVI escalation, this project follows Google's Now in Android shape).
+
+```kotlin
+package {{PACKAGE_ID}}.feed.ui
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import {{PACKAGE_ID}}.core.domain.Outcome
+import {{PACKAGE_ID}}.core.domain.analytics.AnalyticsEvent
+import {{PACKAGE_ID}}.core.domain.analytics.AnalyticsTracker
+import {{PACKAGE_ID}}.feed.domain.usecase.GetFeedUseCase
+import javax.inject.Inject
+
+@HiltViewModel
+class FeedViewModel @Inject constructor(
+    private val getFeed: GetFeedUseCase,
+    private val analytics: AnalyticsTracker,
+) : ViewModel() {
+    private val _state = MutableStateFlow<FeedUiState>(FeedUiState.Loading)
+    val state: StateFlow<FeedUiState> = _state.asStateFlow()
+
+    init {
+        analytics.track(AnalyticsEvent.FeedViewed)
+        load()
+    }
+
+    fun retry() {
+        load()
+    }
+
+    private fun load() {
+        _state.value = FeedUiState.Loading
+        viewModelScope.launch {
+            _state.value = when (val result = getFeed()) {
+                is Outcome.Success -> FeedUiState.Success(result.value)
+                is Outcome.Failure -> FeedUiState.Error(result.error::class.simpleName ?: "Unknown")
+            }
+        }
+    }
+}
+```
+
+#### `app/src/main/java/{{PACKAGE_PATH}}/feed/ui/FeedScreen.kt`
 
 Route + Screen split — the project's canonical Compose shape (see `compose-ui`):
 
-- **`FeedRoute`** owns the ViewModel via `hiltViewModel()` and forwards state to the stateless screen.
+- **`FeedRoute`** (the `@Composable` wrapper) owns the ViewModel via `hiltViewModel()` and forwards state to the stateless screen. Lives in this file alongside `FeedScreen` so the route + UI sit together; the `@Serializable FeedRoute` destination is the data object in `FeedRoute.kt`.
 - **`FeedScreen`** takes state + callbacks. Pure UI, previewable, testable without Hilt.
-- **`@Preview`** renders the stateless screen with sample data.
+- **`@Preview`** renders the stateless screen with sample data per UiState branch.
 
 ```kotlin
 package {{PACKAGE_ID}}.feed.ui
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ListItem
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import {{PACKAGE_ID}}.core.ui.theme.AppTheme
+import {{PACKAGE_ID}}.feed.domain.model.FeedItem
 
 @Composable
 fun FeedRoute(viewModel: FeedViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    FeedScreen(state = state)
+    FeedScreen(state = state, onRetry = viewModel::retry)
 }
 
 @Composable
-fun FeedScreen(state: FeedState, modifier: Modifier = Modifier) {
-    Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text("Feed (${state.items.size} items)")
+fun FeedScreen(
+    state: FeedUiState,
+    onRetry: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    when (state) {
+        FeedUiState.Loading -> Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator()
+        }
+        is FeedUiState.Error -> Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Button(onClick = onRetry) {
+                Text("Retry (${state.message})")
+            }
+        }
+        is FeedUiState.Success -> LazyColumn(
+            modifier = modifier.fillMaxSize().padding(8.dp),
+        ) {
+            items(state.items, key = { it.id }) { item ->
+                ListItem(headlineContent = { Text(item.title) })
+            }
+        }
     }
 }
 
 @Preview
 @Composable
-private fun FeedScreenPreview() = AppTheme {
-    FeedScreen(state = FeedState(items = listOf("hello", "world")))
+private fun FeedScreenSuccessPreview() = AppTheme {
+    FeedScreen(
+        state = FeedUiState.Success(
+            items = listOf(
+                FeedItem("1", "Hello"),
+                FeedItem("2", "World"),
+            ),
+        ),
+        onRetry = {},
+    )
+}
+
+@Preview
+@Composable
+private fun FeedScreenLoadingPreview() = AppTheme {
+    FeedScreen(state = FeedUiState.Loading, onRetry = {})
+}
+
+@Preview
+@Composable
+private fun FeedScreenErrorPreview() = AppTheme {
+    FeedScreen(state = FeedUiState.Error("Network"), onRetry = {})
 }
 ```
 
-### `app/src/main/java/{{PACKAGE_PATH}}/feed/ui/FeedViewModel.kt`
+### Profile feature
 
-Two responsibilities here demonstrated together: (1) MVVM `StateFlow<UiState>`, (2) Clean Architecture — depends only on the **`AnalyticsTracker` domain interface**, never on Firebase directly. Every screen-viewed event is a sealed `AnalyticsEvent` constant, not a magic string.
+Profile mirrors Feed's three-layer shape. The repository returns a stub `ProfileInfo` wrapped in `Outcome.Success`; the screen renders the avatar via Coil's `AsyncImage` to demonstrate the end-to-end Coil wiring.
+
+#### `app/src/main/java/{{PACKAGE_PATH}}/profile/domain/model/ProfileInfo.kt`
 
 ```kotlin
-package {{PACKAGE_ID}}.feed.ui
+package {{PACKAGE_ID}}.profile.domain.model
+
+data class ProfileInfo(
+    val userName: String,
+    val email: String,
+    val avatarUrl: String?,
+)
+```
+
+#### `app/src/main/java/{{PACKAGE_PATH}}/profile/domain/repository/ProfileRepository.kt`
+
+```kotlin
+package {{PACKAGE_ID}}.profile.domain.repository
+
+import {{PACKAGE_ID}}.core.domain.Outcome
+import {{PACKAGE_ID}}.profile.domain.model.ProfileInfo
+
+interface ProfileRepository {
+    suspend fun getProfile(): Outcome<ProfileInfo>
+}
+```
+
+#### `app/src/main/java/{{PACKAGE_PATH}}/profile/domain/usecase/GetProfileUseCase.kt`
+
+```kotlin
+package {{PACKAGE_ID}}.profile.domain.usecase
+
+import {{PACKAGE_ID}}.core.domain.Outcome
+import {{PACKAGE_ID}}.profile.domain.model.ProfileInfo
+import {{PACKAGE_ID}}.profile.domain.repository.ProfileRepository
+import javax.inject.Inject
+
+class GetProfileUseCase @Inject constructor(
+    private val repository: ProfileRepository,
+) {
+    suspend operator fun invoke(): Outcome<ProfileInfo> = repository.getProfile()
+}
+```
+
+#### `app/src/main/java/{{PACKAGE_PATH}}/profile/data/repository/ProfileRepositoryImpl.kt`
+
+```kotlin
+package {{PACKAGE_ID}}.profile.data.repository
+
+import {{PACKAGE_ID}}.core.domain.Outcome
+import {{PACKAGE_ID}}.profile.domain.model.ProfileInfo
+import {{PACKAGE_ID}}.profile.domain.repository.ProfileRepository
+import javax.inject.Inject
+
+class ProfileRepositoryImpl @Inject constructor() : ProfileRepository {
+    // Stub data — replace with real source (Retrofit + RemoteDataSource or DataStore).
+    override suspend fun getProfile(): Outcome<ProfileInfo> = Outcome.Success(
+        ProfileInfo(
+            userName = "guest",
+            email = "guest@example.com",
+            avatarUrl = null,
+        ),
+    )
+}
+```
+
+#### `app/src/main/java/{{PACKAGE_PATH}}/profile/data/di/ProfileDataModule.kt`
+
+```kotlin
+package {{PACKAGE_ID}}.profile.data.di
+
+import dagger.Binds
+import dagger.Module
+import dagger.hilt.InstallIn
+import dagger.hilt.components.SingletonComponent
+import {{PACKAGE_ID}}.profile.data.repository.ProfileRepositoryImpl
+import {{PACKAGE_ID}}.profile.domain.repository.ProfileRepository
+
+@Module
+@InstallIn(SingletonComponent::class)
+abstract class ProfileDataModule {
+    @Binds
+    abstract fun bindProfileRepository(impl: ProfileRepositoryImpl): ProfileRepository
+}
+```
+
+#### `app/src/main/java/{{PACKAGE_PATH}}/profile/ui/ProfileUiState.kt`
+
+```kotlin
+package {{PACKAGE_ID}}.profile.ui
+
+import {{PACKAGE_ID}}.profile.domain.model.ProfileInfo
+
+sealed interface ProfileUiState {
+    data object Loading : ProfileUiState
+    data class Error(val message: String) : ProfileUiState
+    data class Success(val profile: ProfileInfo) : ProfileUiState
+}
+```
+
+#### `app/src/main/java/{{PACKAGE_PATH}}/profile/ui/ProfileRoute.kt`
+
+```kotlin
+package {{PACKAGE_ID}}.profile.ui
+
+import kotlinx.serialization.Serializable
+
+@Serializable data object ProfileRoute
+```
+
+#### `app/src/main/java/{{PACKAGE_PATH}}/profile/ui/ProfileViewModel.kt`
+
+```kotlin
+package {{PACKAGE_ID}}.profile.ui
 
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import {{PACKAGE_ID}}.core.domain.Outcome
 import {{PACKAGE_ID}}.core.domain.analytics.AnalyticsEvent
 import {{PACKAGE_ID}}.core.domain.analytics.AnalyticsTracker
+import {{PACKAGE_ID}}.profile.domain.usecase.GetProfileUseCase
 import javax.inject.Inject
 
-data class FeedState(val items: List<String> = emptyList())
-
 @HiltViewModel
-class FeedViewModel @Inject constructor(
+class ProfileViewModel @Inject constructor(
+    private val getProfile: GetProfileUseCase,
     private val analytics: AnalyticsTracker,
 ) : ViewModel() {
-    private val _state = MutableStateFlow(FeedState())
-    val state: StateFlow<FeedState> = _state.asStateFlow()
+    private val _state = MutableStateFlow<ProfileUiState>(ProfileUiState.Loading)
+    val state: StateFlow<ProfileUiState> = _state.asStateFlow()
 
     init {
-        analytics.track(AnalyticsEvent.FeedViewed)
+        analytics.track(AnalyticsEvent.ProfileViewed)
+        load()
+    }
+
+    fun retry() {
+        load()
+    }
+
+    private fun load() {
+        _state.value = ProfileUiState.Loading
+        viewModelScope.launch {
+            _state.value = when (val result = getProfile()) {
+                is Outcome.Success -> ProfileUiState.Success(result.value)
+                is Outcome.Failure -> ProfileUiState.Error(result.error::class.simpleName ?: "Unknown")
+            }
+        }
     }
 }
 ```
 
-### `app/src/main/java/{{PACKAGE_PATH}}/profile/ui/ProfileScreen.kt`
+#### `app/src/main/java/{{PACKAGE_PATH}}/profile/ui/ProfileScreen.kt`
 
-Same Route + Screen + Preview shape as `FeedScreen`, plus an `AsyncImage` that demonstrates the Coil 3 wiring end-to-end. The `model` is null in the scaffold so the preview and the launchable app both render without a network round-trip — replace with a real URL on first use. Coil's network fetcher reuses the project's `OkHttpClient` because `{{APP_CLASS}}` registered an `OkHttpNetworkFetcherFactory` (see "Application" above).
+Same Route + Screen + Preview shape as Feed. The `AsyncImage` demonstrates Coil 3 end-to-end — `model = null` in the stub renders an empty placeholder, no network round-trip required. Coil's network fetcher reuses the project's `OkHttpClient` because `{{APP_CLASS}}` registered an `OkHttpNetworkFetcherFactory` (see "Application" above).
 
 ```kotlin
 package {{PACKAGE_ID}}.profile.ui
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -879,102 +1227,183 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import {{PACKAGE_ID}}.core.ui.theme.AppTheme
+import {{PACKAGE_ID}}.profile.domain.model.ProfileInfo
 
 @Composable
 fun ProfileRoute(viewModel: ProfileViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    ProfileScreen(state = state)
+    ProfileScreen(state = state, onRetry = viewModel::retry)
 }
 
 @Composable
-fun ProfileScreen(state: ProfileState, modifier: Modifier = Modifier) {
-    Column(
-        modifier = modifier.fillMaxSize(),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
-        AsyncImage(
-            model = state.avatarUrl,
-            contentDescription = null,
-            modifier = Modifier
-                .size(96.dp)
-                .clip(CircleShape),
-        )
-        Text("Profile (${state.userName})")
+fun ProfileScreen(
+    state: ProfileUiState,
+    onRetry: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    when (state) {
+        ProfileUiState.Loading -> Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator()
+        }
+        is ProfileUiState.Error -> Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Button(onClick = onRetry) {
+                Text("Retry (${state.message})")
+            }
+        }
+        is ProfileUiState.Success -> Column(
+            modifier = modifier.fillMaxSize(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            AsyncImage(
+                model = state.profile.avatarUrl,
+                contentDescription = null,
+                modifier = Modifier
+                    .size(96.dp)
+                    .clip(CircleShape),
+            )
+            Text("Profile (${state.profile.userName})")
+            Text(state.profile.email)
+        }
     }
 }
 
 @Preview
 @Composable
-private fun ProfileScreenPreview() = AppTheme {
-    ProfileScreen(state = ProfileState(userName = "guest", avatarUrl = null))
+private fun ProfileScreenSuccessPreview() = AppTheme {
+    ProfileScreen(
+        state = ProfileUiState.Success(
+            ProfileInfo(userName = "guest", email = "guest@example.com", avatarUrl = null),
+        ),
+        onRetry = {},
+    )
 }
-```
 
-### `app/src/main/java/{{PACKAGE_PATH}}/profile/ui/ProfileViewModel.kt`
+@Preview
+@Composable
+private fun ProfileScreenLoadingPreview() = AppTheme {
+    ProfileScreen(state = ProfileUiState.Loading, onRetry = {})
+}
 
-```kotlin
-package {{PACKAGE_ID}}.profile.ui
-
-import androidx.lifecycle.ViewModel
-import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import {{PACKAGE_ID}}.core.domain.analytics.AnalyticsEvent
-import {{PACKAGE_ID}}.core.domain.analytics.AnalyticsTracker
-import javax.inject.Inject
-
-data class ProfileState(
-    val userName: String = "guest",
-    val avatarUrl: String? = null,
-)
-
-@HiltViewModel
-class ProfileViewModel @Inject constructor(
-    private val analytics: AnalyticsTracker,
-) : ViewModel() {
-    private val _state = MutableStateFlow(ProfileState())
-    val state: StateFlow<ProfileState> = _state.asStateFlow()
-
-    init {
-        analytics.track(AnalyticsEvent.ProfileViewed)
-    }
+@Preview
+@Composable
+private fun ProfileScreenErrorPreview() = AppTheme {
+    ProfileScreen(state = ProfileUiState.Error("Network"), onRetry = {})
 }
 ```
 
 ### `app/src/test/java/{{PACKAGE_PATH}}/feed/ui/FeedViewModelTest.kt`
 
-Plain JUnit 4 + MockK + Turbine — no Robolectric. The test verifies *both* (a) the initial UiState shape and (b) that the VM tracks the right event on init, which is exactly the kind of regression the analytics layer is meant to catch.
+Plain JUnit 4 + MockK + Turbine — no Robolectric. Mocks the use case + tracker and verifies both `init { }` side effects: (a) `Loading → Success` transition driven by the use case, and (b) `AnalyticsEvent.FeedViewed` firing exactly once.
 
 ```kotlin
 package {{PACKAGE_ID}}.feed.ui
 
 import app.cash.turbine.test
+import io.mockk.coEvery
 import io.mockk.mockk
 import io.mockk.verify
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.setMain
+import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Before
 import org.junit.Test
+import {{PACKAGE_ID}}.core.domain.Outcome
 import {{PACKAGE_ID}}.core.domain.analytics.AnalyticsEvent
 import {{PACKAGE_ID}}.core.domain.analytics.AnalyticsTracker
+import {{PACKAGE_ID}}.feed.domain.model.FeedItem
+import {{PACKAGE_ID}}.feed.domain.usecase.GetFeedUseCase
 
 class FeedViewModelTest {
+    @Before fun setup() { Dispatchers.setMain(UnconfinedTestDispatcher()) }
+    @After fun tearDown() { Dispatchers.resetMain() }
+
     @Test
-    fun `emits empty initial state`() = runTest {
+    fun `emits Success after init`() = runTest {
+        val getFeed = mockk<GetFeedUseCase>()
+        coEvery { getFeed() } returns Outcome.Success(listOf(FeedItem("1", "hello")))
         val analytics = mockk<AnalyticsTracker>(relaxed = true)
-        val vm = FeedViewModel(analytics)
+
+        val vm = FeedViewModel(getFeed, analytics)
         vm.state.test {
-            assertEquals(emptyList<String>(), awaitItem().items)
+            assertEquals(
+                FeedUiState.Success(listOf(FeedItem("1", "hello"))),
+                awaitItem(),
+            )
             cancelAndIgnoreRemainingEvents()
         }
     }
 
     @Test
     fun `tracks FeedViewed on init`() {
+        val getFeed = mockk<GetFeedUseCase>()
+        coEvery { getFeed() } returns Outcome.Success(emptyList())
         val analytics = mockk<AnalyticsTracker>(relaxed = true)
-        FeedViewModel(analytics)
+
+        FeedViewModel(getFeed, analytics)
+
         verify(exactly = 1) { analytics.track(AnalyticsEvent.FeedViewed) }
+    }
+}
+```
+
+### `app/src/test/java/{{PACKAGE_PATH}}/profile/ui/ProfileViewModelTest.kt`
+
+```kotlin
+package {{PACKAGE_ID}}.profile.ui
+
+import app.cash.turbine.test
+import io.mockk.coEvery
+import io.mockk.mockk
+import io.mockk.verify
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.setMain
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Before
+import org.junit.Test
+import {{PACKAGE_ID}}.core.domain.Outcome
+import {{PACKAGE_ID}}.core.domain.analytics.AnalyticsEvent
+import {{PACKAGE_ID}}.core.domain.analytics.AnalyticsTracker
+import {{PACKAGE_ID}}.profile.domain.model.ProfileInfo
+import {{PACKAGE_ID}}.profile.domain.usecase.GetProfileUseCase
+
+class ProfileViewModelTest {
+    @Before fun setup() { Dispatchers.setMain(UnconfinedTestDispatcher()) }
+    @After fun tearDown() { Dispatchers.resetMain() }
+
+    @Test
+    fun `emits Success after init`() = runTest {
+        val info = ProfileInfo(userName = "guest", email = "g@e.com", avatarUrl = null)
+        val getProfile = mockk<GetProfileUseCase>()
+        coEvery { getProfile() } returns Outcome.Success(info)
+        val analytics = mockk<AnalyticsTracker>(relaxed = true)
+
+        val vm = ProfileViewModel(getProfile, analytics)
+        vm.state.test {
+            assertEquals(ProfileUiState.Success(info), awaitItem())
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `tracks ProfileViewed on init`() {
+        val getProfile = mockk<GetProfileUseCase>()
+        coEvery { getProfile() } returns Outcome.Success(
+            ProfileInfo("guest", "g@e.com", null),
+        )
+        val analytics = mockk<AnalyticsTracker>(relaxed = true)
+
+        ProfileViewModel(getProfile, analytics)
+
+        verify(exactly = 1) { analytics.track(AnalyticsEvent.ProfileViewed) }
     }
 }
 ```
@@ -992,17 +1421,27 @@ import androidx.compose.ui.test.onNodeWithText
 import org.junit.Rule
 import org.junit.Test
 import {{PACKAGE_ID}}.core.ui.theme.AppTheme
+import {{PACKAGE_ID}}.feed.domain.model.FeedItem
 
 class FeedScreenTest {
     @get:Rule val composeRule = createComposeRule()
 
-    @Test fun rendersItemCount() {
+    @Test fun rendersItems() {
         composeRule.setContent {
             AppTheme {
-                FeedScreen(state = FeedState(items = listOf("a", "b", "c")))
+                FeedScreen(
+                    state = FeedUiState.Success(
+                        items = listOf(
+                            FeedItem("1", "alpha"),
+                            FeedItem("2", "beta"),
+                        ),
+                    ),
+                    onRetry = {},
+                )
             }
         }
-        composeRule.onNodeWithText("Feed (3 items)").assertIsDisplayed()
+        composeRule.onNodeWithText("alpha").assertIsDisplayed()
+        composeRule.onNodeWithText("beta").assertIsDisplayed()
     }
 }
 ```
@@ -1018,6 +1457,7 @@ import androidx.compose.ui.test.onNodeWithText
 import org.junit.Rule
 import org.junit.Test
 import {{PACKAGE_ID}}.core.ui.theme.AppTheme
+import {{PACKAGE_ID}}.profile.domain.model.ProfileInfo
 
 class ProfileScreenTest {
     @get:Rule val composeRule = createComposeRule()
@@ -1025,7 +1465,12 @@ class ProfileScreenTest {
     @Test fun rendersUserName() {
         composeRule.setContent {
             AppTheme {
-                ProfileScreen(state = ProfileState(userName = "Ada", avatarUrl = null))
+                ProfileScreen(
+                    state = ProfileUiState.Success(
+                        ProfileInfo(userName = "Ada", email = "ada@example.com", avatarUrl = null),
+                    ),
+                    onRetry = {},
+                )
             }
         }
         composeRule.onNodeWithText("Profile (Ada)").assertIsDisplayed()
@@ -1420,28 +1865,9 @@ abstract class AnalyticsModule {
 }
 ```
 
-#### Convenience: `Composable` LaunchedEffect helper
+#### Canonical screen-viewed pattern
 
-Most screen-viewed events should fire once per entry, not on every recomposition. A small helper makes the call site one line and keeps `LaunchedEffect(Unit)` boilerplate out of every screen.
-
-`app/src/main/java/{{PACKAGE_PATH}}/core/ui/common/TrackScreen.kt`:
-
-```kotlin
-package {{PACKAGE_ID}}.core.ui.common
-
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import {{PACKAGE_ID}}.core.domain.analytics.AnalyticsEvent
-import {{PACKAGE_ID}}.core.domain.analytics.AnalyticsTracker
-
-/** Fires once when this composable enters composition. */
-@Composable
-fun TrackScreen(tracker: AnalyticsTracker, event: AnalyticsEvent) {
-    LaunchedEffect(event) { tracker.track(event) }
-}
-```
-
-> The scaffold demonstrates both shapes on purpose. `Feed`/`Profile` VMs call `analytics.track(...)` from `init` — simplest possible wiring, fine for a starter screen. `HomeScreen` uses `TrackScreen(...)` at the top of the composable instead — that's the shape to prefer for richer screens, because the event fires on every nav-entry into composition rather than only on VM construction (which matters when the VM survives across nav transitions via `SavedStateHandle`).
+There is **one** screen-viewed pattern in this scaffold: inject `AnalyticsTracker` privately into the `ViewModel`, fire `AnalyticsEvent.<Screen>Viewed` from `init { }`. See `home/ui/HomeViewModel.kt`, `feed/ui/FeedViewModel.kt`, and `profile/ui/ProfileViewModel.kt` for the three reference implementations — they're identical in shape. No Compose helper, no `CompositionLocal`, no public VM dependency. Copy any of the three when adding a new screen.
 
 ---
 
@@ -1576,7 +2002,30 @@ class AppPreferences @Inject constructor(
 }
 ```
 
-`AppPreferences` is `@Inject`-constructable, so no `@Provides` is needed — Hilt instantiates it on first use. Add a `core/data/datastore/di/DataStoreModule.kt` only when you need to expose typed bindings (`@Binds`-style) for an interface like `AppSettings`. For now keep the class concrete and inject it directly.
+### `app/src/main/java/{{PACKAGE_PATH}}/core/data/datastore/di/DataStoreModule.kt`
+
+Mirrors the DI shape of `NetworkModule`, `PersistenceModule`, and `AnalyticsModule` — every feature-flagged piece of infrastructure ships its own Hilt module so the wiring is grep-able and uniform. `AppPreferences` is `@Inject`-constructable, but exposing it through a `@Provides @Singleton` here documents the singleton intent explicitly and gives test modules an obvious replacement seam.
+
+```kotlin
+package {{PACKAGE_ID}}.core.data.datastore.di
+
+import android.content.Context
+import dagger.Module
+import dagger.Provides
+import dagger.hilt.InstallIn
+import dagger.hilt.android.qualifiers.ApplicationContext
+import dagger.hilt.components.SingletonComponent
+import {{PACKAGE_ID}}.core.data.datastore.AppPreferences
+import javax.inject.Singleton
+
+@Module
+@InstallIn(SingletonComponent::class)
+object DataStoreModule {
+    @Provides @Singleton
+    fun provideAppPreferences(@ApplicationContext context: Context): AppPreferences =
+        AppPreferences(context)
+}
+```
 
 ## INCLUDE_FIREBASE additions
 

@@ -41,12 +41,14 @@ app/src/main/java/<package>/
     │   ├── repository/   # Repository interfaces (return Outcome<T>)
     │   └── usecase/      # Use cases (one class per action)
     └── ui/
-        ├── <Screen>UiState.kt / <Screen>Action.kt / <Screen>ViewModel.kt
+        ├── <Screen>UiState.kt / <Screen>ViewModel.kt
         ├── <Screen>Screen.kt        # stateless Screen + Route wrapper + Preview(s)
         └── <Screen>Route.kt         # @Serializable destination
 ```
 
 Dependency direction is always **ui → domain ← data**, *per feature*. The domain layer has no Android or framework dependencies. Don't grow a global `ui/`, `domain/`, or `data/` next to features — that's the layer-first shape this project deliberately avoids.
+
+ViewModels expose user actions as **discrete public functions** (`fun retry()`, `fun submit(...)`); Composables take one lambda per action. This matches Google's [Now in Android](https://github.com/android/nowinandroid) and the standard MVVM shape. A sealed `<Screen>Action.kt` is an MVI escalation reserved for screens with ≥5 distinct interactions.
 
 ## Conventions
 
