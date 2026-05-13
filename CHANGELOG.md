@@ -9,7 +9,6 @@ All notable changes to this repo's Claude Code configurations are logged here. D
 - **Copilot CLI marketplace support.** The repo now ships a `.github/plugin/marketplace.json` alongside the existing `.claude-plugin/marketplace.json`, making the same four plugins installable from both Claude Code and GitHub Copilot CLI.
 - `build-plugin.sh` produces dual output per stack: the plugin directory contains `.agent.md` files (Copilot CLI format), while the `.plugin` ZIP contains `.md` files (Claude Code format).
 - `validate.sh` gains a `check_marketplace_json` step that parses `.github/plugin/marketplace.json` and verifies every plugin entry resolves to a directory with a `plugin.json` manifest.
-- `plugin.json` manifests now declare `agents`, `skills`, and `hooks` component path fields explicitly for Copilot CLI discoverability.
 
 ### Changed
 

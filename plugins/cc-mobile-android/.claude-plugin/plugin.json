@@ -16,8 +16,5 @@
     "retrofit",
     "room",
     "navigation-compose"
-  ],
-  "agents": "agents/",
-  "skills": "skills/",
-  "hooks": "hooks.json"
+  ]
 }

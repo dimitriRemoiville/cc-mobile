@@ -16,8 +16,5 @@
     "swiftdata",
     "navigation-stack",
     "keychain"
-  ],
-  "agents": "agents/",
-  "skills": "skills/",
-  "hooks": "hooks.json"
+  ]
 }

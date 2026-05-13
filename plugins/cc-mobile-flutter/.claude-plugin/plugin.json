@@ -17,8 +17,5 @@
     "drift",
     "go-router",
     "get-it"
-  ],
-  "agents": "agents/",
-  "skills": "skills/",
-  "hooks": "hooks.json"
+  ]
 }

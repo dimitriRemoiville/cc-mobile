@@ -16,8 +16,5 @@
     "sqldelight",
     "shared-viewmodels",
     "xcframework"
-  ],
-  "agents": "agents/",
-  "skills": "skills/",
-  "hooks": "hooks.json"
+  ]
 }
