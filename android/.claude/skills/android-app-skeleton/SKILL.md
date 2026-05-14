@@ -83,10 +83,22 @@ Why feature-first inside a single module?
 ```kts
 pluginManagement {
     repositories {
-        google()
+        google {
+            content {
+                includeGroupByRegex("com\\.android.*")
+                includeGroupByRegex("com\\.google.*")
+                includeGroupByRegex("androidx.*")
+            }
+        }
         mavenCentral()
         gradlePluginPortal()
     }
+}
+
+plugins {
+    // Required by gradle/gradle-daemon-jvm.properties — resolves the daemon JVM
+    // toolchain via the Foojay Disco API so contributors don't need a specific JAVA_HOME.
+    id("org.gradle.toolchains.foojay-resolver-convention") version "1.0.0"
 }
 
 dependencyResolutionManagement {
