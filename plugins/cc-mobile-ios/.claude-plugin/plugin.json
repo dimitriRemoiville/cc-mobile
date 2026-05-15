@@ -1,6 +1,6 @@
 {
   "name": "cc-mobile-ios",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Opinionated Claude Code setup for iOS apps — Swift + SwiftUI, MVVM + Clean Architecture, @Observable state holders, URLSession + Codable, SwiftData + Keychain, NavigationStack typed routes. Ships skills, agents, and slash commands including /init-ios-app to scaffold a new app end-to-end.",
   "author": {
     "name": "Dimitri Remoiville",
