@@ -438,6 +438,93 @@ for p in data.get('plugins', []):
   fi
 }
 
+# Verify the marketplace's metadata.version matches the highest per-plugin
+# version. Drift here means installers can advertise a stale marketplace
+# version while individual plugins have moved on.
+check_version_alignment() {
+  local cc_mf="$ROOT/.claude-plugin/marketplace.json"
+  local gh_mf="$ROOT/.github/plugin/marketplace.json"
+
+  if [[ ! -f "$cc_mf" ]]; then
+    say_warn "missing .claude-plugin/marketplace.json — skipping version-alignment check"
+    return
+  fi
+  if ! command -v python3 >/dev/null 2>&1; then
+    say_warn "python3 not available — skipping version-alignment check"
+    return
+  fi
+
+  local report
+  report="$(python3 - "$cc_mf" "$gh_mf" "$ROOT" <<'PY'
+import json, os, sys, glob
+
+cc_mf, gh_mf, root = sys.argv[1], sys.argv[2], sys.argv[3]
+
+def load(p):
+    if not os.path.exists(p):
+        return None
+    with open(p) as f:
+        return json.load(f)
+
+cc = load(cc_mf)
+gh = load(gh_mf)
+
+plugin_versions = {}
+for plugin_dir in sorted(glob.glob(os.path.join(root, "plugins", "cc-mobile-*"))):
+    if plugin_dir.endswith(".plugin"):
+        continue
+    mf = os.path.join(plugin_dir, ".claude-plugin", "plugin.json")
+    if not os.path.exists(mf):
+        continue
+    with open(mf) as f:
+        data = json.load(f)
+    plugin_versions[os.path.basename(plugin_dir)] = data.get("version", "")
+
+def vkey(v):
+    try:
+        return tuple(int(x) for x in v.split("."))
+    except Exception:
+        return (0,)
+
+if not plugin_versions:
+    print("ERR no plugin.json files found under plugins/")
+    sys.exit(0)
+
+max_v = max(plugin_versions.values(), key=vkey)
+
+def mf_version(mf):
+    if mf is None:
+        return None
+    return (mf.get("metadata") or {}).get("version", "")
+
+cc_v = mf_version(cc)
+gh_v = mf_version(gh)
+
+errors = []
+if cc_v != max_v:
+    errors.append(f".claude-plugin/marketplace.json metadata.version={cc_v!r} but highest plugin version is {max_v!r}")
+if gh is not None and gh_v != max_v:
+    errors.append(f".github/plugin/marketplace.json metadata.version={gh_v!r} but highest plugin version is {max_v!r}")
+
+per_plugin = ", ".join(f"{n}={v}" for n, v in plugin_versions.items())
+if errors:
+    for e in errors:
+        print("ERR " + e)
+    print("INFO per-plugin: " + per_plugin)
+else:
+    print("OK marketplace version aligned (" + max_v + ") with: " + per_plugin)
+PY
+)"
+
+  while IFS= read -r line; do
+    case "$line" in
+      "OK "*)   say_ok "${line#OK }" ;;
+      "ERR "*)  say_err "${line#ERR }" ;;
+      "INFO "*) echo "         ${line#INFO }" ;;
+    esac
+  done <<<"$report"
+}
+
 # ---------- main ----------
 
 bold "validate.sh — scanning .claude/ content across ${STACKS[*]}"; echo
@@ -480,6 +567,7 @@ check_skill_prefixes
 check_agent_prefixes
 check_agent_skills_resolve
 check_marketplace_json
+check_version_alignment
 echo
 
 bold "summary"; echo

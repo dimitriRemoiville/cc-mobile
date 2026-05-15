@@ -24,12 +24,24 @@
 set -euo pipefail
 set -o pipefail
 
-read_command_from_stdin() {
-  if [ -t 0 ]; then return 0; fi
-  local payload
-  payload="$(cat)" || return 0
+# Fast path: this hook fires on every Bash call but only does real work for
+# `git commit`. Short-circuit with a cheap substring check before paying the
+# JSON-parser cost.
+PAYLOAD=""
+if [ ! -t 0 ]; then
+  PAYLOAD="$(cat || true)"
+fi
+
+HAYSTACK="${PAYLOAD}${CLAUDE_TOOL_INPUT_command:-}"
+case "$HAYSTACK" in
+  *"git commit"*) ;;
+  *) exit 0 ;;
+esac
+
+read_command_from_payload() {
+  [ -z "$PAYLOAD" ] && return 0
   if command -v python3 >/dev/null 2>&1; then
-    python3 - <<'PY' "$payload"
+    python3 - <<'PY' "$PAYLOAD"
 import json, sys
 try:
     data = json.loads(sys.argv[1])
@@ -39,12 +51,12 @@ ti = data.get("tool_input", {}) if isinstance(data, dict) else {}
 print(ti.get("command", ""))
 PY
   else
-    printf '%s' "$payload" | grep -oE '"command"\s*:\s*"[^"]*"' | head -n 1 \
+    printf '%s' "$PAYLOAD" | grep -oE '"command"\s*:\s*"[^"]*"' | head -n 1 \
       | sed -E 's/.*"command"\s*:\s*"(.*)"/\1/'
   fi
 }
 
-CMD="$(read_command_from_stdin)"
+CMD="$(read_command_from_payload)"
 CMD="${CMD:-${CLAUDE_TOOL_INPUT_command:-}}"
 
 case "$CMD" in

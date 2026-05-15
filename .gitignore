@@ -15,6 +15,9 @@
 # Claude Code local overrides
 .claude/settings.local.json
 
+# lean-ctx local cache (per-user context graph)
+.lean-ctx/
+
 # Per-agent runtime
 terminals/
 
