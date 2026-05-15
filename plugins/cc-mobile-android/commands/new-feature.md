@@ -32,7 +32,7 @@ Follow this sequence — do not skip steps:
        └── <Feature>Route.kt                   # @Serializable destination (one file per feature)
    ```
 
-   Promote `data/mapper/` to its own package only when several DTOs map to the same domain type — otherwise keep mapping functions colocated with the DTO. Use `core/data/network/Outcomes.kt` (`toOutcome` + `toDomainError`) for the `Result → Outcome` conversion in the repository implementation; never open-code `runCatching { ... }.fold(...)` (it swallows `CancellationException`).
+   Promote `data/mapper/` to its own package only when several DTOs map to the same domain type — otherwise keep mapping functions colocated with the DTO. For the repository's `Result → Outcome` conversion use `core/data/network/Outcomes.kt` (`toOutcome` + `toDomainError`) — full rationale in the `android-architecture` skill.
 
    The `<Feature>ViewModel` exposes **discrete public functions** for user actions (`fun retry()`, `fun submit(...)`); the Composable takes one lambda per action (`onRetry: () -> Unit`). Matches Google's [Now in Android](https://github.com/android/nowinandroid) and the official MVVM guidance. Escalate to a sealed `<Feature>Action.kt` + a single `onAction: (Action) -> Unit` callback only when the screen has ≥5 distinct interactions and the Composable signature would otherwise balloon (that's an MVI shape; this project is MVVM by default).
 
@@ -51,8 +51,8 @@ Follow this sequence — do not skip steps:
 
 8. **Report** what was created, link each file, and list any TODOs you left behind.
 
-Hard rules:
-- **Domain-facing return types are `Outcome<T>`.** No `Result<T>` on a `domain/` interface, no raw throws across a layer boundary. `Result<T>` is allowed *inside* `<feature>/data/` as scratch (`runCatching { ... }.toOutcome(::toDomainError)`); flag it anywhere else.
+Hard rules (the `android-architecture` skill is the canonical reference — load it if anything below is ambiguous):
+- **Domain-facing return types are `Outcome<T>`** — no `Result<T>` and no raw throws across a layer boundary.
 - **No `androidx.*`, `retrofit2.*`, or `androidx.room.*` imports** in `<feature>/domain/` or `core/domain/`.
 - **No Compose imports outside `ui/` packages** (`<feature>/ui/` or `core/ui/`).
 - **All new dependencies go in the version catalog.**

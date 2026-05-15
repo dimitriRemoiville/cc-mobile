@@ -1,0 +1,35 @@
+name: validate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run validate.sh
+        run: bash scripts/validate.sh
+
+      - name: Rebuild plugins and check for uncommitted drift
+        run: |
+          bash scripts/build-plugin.sh all
+          # Compare unpacked plugin directories against committed copies.
+          # Ignore the .plugin ZIPs — their timestamps differ on every build.
+          if ! git diff --quiet -- plugins/cc-mobile-android plugins/cc-mobile-ios plugins/cc-mobile-kmm plugins/cc-mobile-flutter; then
+            echo "::error::Plugin directories are out of sync with their source stack folders."
+            echo "Run 'scripts/build-plugin.sh all' locally and commit the result."
+            git diff --stat -- plugins/cc-mobile-android plugins/cc-mobile-ios plugins/cc-mobile-kmm plugins/cc-mobile-flutter
+            exit 1
+          fi
+
+  drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run cross-stack drift check
+        run: bash scripts/check-drift.sh

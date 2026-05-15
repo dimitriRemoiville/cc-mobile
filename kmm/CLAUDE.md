@@ -115,7 +115,6 @@ Use the `Task` tool with these subagents for focused work (see `.claude/agents/`
 - `kmm-tester` — `kotlin.test` + `kotlinx-coroutines-test` suites for common code.
 - `kmm-build-expert` — KMP Gradle plugin, source-set wiring, XCFramework / CocoaPods / SPM distribution.
 - `kmm-security-reviewer` — token storage on each platform, network calls, KMP-side keystore/keychain glue.
-- `kmm-a11y-reviewer` — both platforms' UI for shared-layer pitfalls (locale-insensitive formatting, color-only enums).
 - `kmm-performance-analyst` — shared cold-start cost, Ktor + serialization overhead, framework-link size.
 - `kmm-release-engineer` — version bumps, XCFramework publishing, dual-platform release coordination.
 

@@ -32,7 +32,6 @@ kmm/
     │   ├── kmm-tester.md
     │   ├── kmm-build-expert.md
     │   ├── kmm-security-reviewer.md
-    │   ├── kmm-a11y-reviewer.md
     │   ├── kmm-performance-analyst.md
     │   └── kmm-release-engineer.md
     ├── skills/                    # on-demand playbooks
@@ -92,7 +91,6 @@ The public `commonMain` surface is also the Swift surface. Follow `.claude/skill
 | `kmm-tester` | `kotlin.test` + `kotlinx-coroutines-test` suites for common code |
 | `kmm-build-expert` | KMP Gradle plugin, source-set wiring, XCFramework / CocoaPods / SPM distribution |
 | `kmm-security-reviewer` | Token storage on each platform, network calls, KMP-side keystore/keychain glue |
-| `kmm-a11y-reviewer` | Both platforms' UI for shared-layer pitfalls (locale-insensitive formatting, color-only enums) |
 | `kmm-performance-analyst` | Shared cold-start cost, Ktor + serialization overhead, framework-link size |
 | `kmm-release-engineer` | Version bumps, XCFramework publishing, dual-platform release coordination |
 

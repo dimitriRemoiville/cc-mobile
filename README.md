@@ -122,7 +122,7 @@ Each stack has its own agents/skills/commands tailored to its conventions — do
 
 ### A note on agent-role asymmetry
 
-Every stack ships nine agents in the same pattern (`architect`, `ui-engineer` / `engineer`, `reviewer`, `tester`, `build-expert`, `performance-analyst`, `security-reviewer`, `a11y-reviewer`, `release-engineer`), with one deliberate exception: KMM's second slot is `kmm-engineer`, not `kmm-ui-engineer`. The KMM plugin covers the shared module only — the UI lives in the companion `cc-mobile-android` and `cc-mobile-ios` plugins — so `kmm-engineer` owns shared business logic, use cases, repositories, and shared ViewModels, and defers all rendering to the native-side UI engineers.
+Android, iOS, and Flutter each ship nine agents in the same pattern (`architect`, `ui-engineer`, `reviewer`, `tester`, `build-expert`, `performance-analyst`, `security-reviewer`, `a11y-reviewer`, `release-engineer`). KMM ships eight, with two deliberate exceptions: its second slot is `kmm-engineer` (not `kmm-ui-engineer`) because the shared module isn't UI, and it has no `a11y-reviewer` because there's no shared UI to review — invoke `android-a11y-reviewer` or `ios-a11y-reviewer` from the native sides instead.
 
 ## Conventions shared across stacks
 

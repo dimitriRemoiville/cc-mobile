@@ -74,8 +74,9 @@ ViewModels expose user actions as **discrete public functions** (`fun retry()`, 
 - Never block the main thread. Prefer `Flow` over `LiveData` in new code.
 
 **Errors**
-- Domain layer returns `Outcome<T>` (sealed interface) carrying a `DomainError` on failure — never throws across layers, never returns `Result<T>` on a domain-facing signature. The canonical types live in `core/domain/Outcome.kt` and `core/domain/DomainError.kt` (see the `android-app-skeleton` skill).
-- Network / IO exceptions are mapped to `DomainError` at the repository boundary via `runCatching { ... }.toOutcome(::toDomainError)`. The `toOutcome` adapter and `toDomainError` mapper are scaffolded once in `core/data/network/Outcomes.kt` — never open-code `runCatching { ... }.fold(...)` (it swallows `CancellationException`).
+- Domain layer returns `Outcome<T>` carrying `DomainError` on failure — never throws across layers, never returns `Result<T>` on a domain-facing signature.
+- Repositories map exceptions at the boundary via `runCatching { ... }.toOutcome(::toDomainError)` (helpers in `core/data/network/Outcomes.kt`).
+- See `android-architecture` skill for the full pattern and the `runCatching.fold` pitfall.
 
 ## Build
 

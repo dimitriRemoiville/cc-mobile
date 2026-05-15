@@ -28,6 +28,10 @@ See [README.md](README.md) for the cross-stack conventions table and stack layou
 
 Run [scripts/validate.sh](scripts/validate.sh) before committing config changes. It checks agent/command frontmatter, resolves relative paths referenced inside commands, and validates both marketplace manifests (`.claude-plugin/marketplace.json` for Claude Code, `.github/plugin/marketplace.json` for Copilot CLI).
 
+Run [scripts/check-drift.sh](scripts/check-drift.sh) to surface cross-stack structural drift — logical roles, commands, prefixed skill topics, and required agent frontmatter keys that exist in some stacks but are missing from others. The "don't cross-edit between stacks" rule means improvements never auto-propagate; this script makes the gaps visible.
+
+Both run in CI via [.github/workflows/validate.yml](.github/workflows/validate.yml), which also rebuilds every plugin and fails if `plugins/` is out of sync with the source stack folders.
+
 ## Dual marketplace
 
 This repo ships plugins for both **Claude Code** and **GitHub Copilot CLI** from the same source. Agent files under `<stack>/.claude/agents/` are plain `.md`; the build script copies them as `.agent.md` in the plugin directory (Copilot CLI format) and as `.md` in the `.plugin` ZIP (Claude Code format). Do not rename the source files.
