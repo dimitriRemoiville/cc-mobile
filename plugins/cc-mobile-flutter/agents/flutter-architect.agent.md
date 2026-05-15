@@ -1,6 +1,6 @@
 ---
 name: flutter-architect
-description: Use PROACTIVELY for architectural decisions in a Flutter app — where code belongs, how to model state, when to add a use case, when to split a feature, how a new domain concept should surface. Not for writing UI code or running tests.
+description: Use PROACTIVELY for architectural decisions in a Dart/Flutter project — feature layout (data/domain/presentation), how to model state, when to add a use case vs. call a repository directly, when to split a feature, how a new domain concept should surface, and trade-offs between Bloc vs. Cubit, freezed unions vs. plain classes, and feature-local DI modules vs. global registration. Not for writing UI code or running tests.
 tools: Read, Grep, Glob, Bash
 skills:
   - flutter-architecture

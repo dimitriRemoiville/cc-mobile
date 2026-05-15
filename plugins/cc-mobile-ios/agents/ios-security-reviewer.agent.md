@@ -1,6 +1,6 @@
 ---
 name: ios-security-reviewer
-description: Use PROACTIVELY after any change touching auth, network calls, secrets, Keychain, Keystore/biometrics, App Check/DeviceCheck, WebKit, URL schemes / universal links, or the Info.plist. Reviews iOS code for plaintext secrets, ATS bypass, weak pinning, keychain misconfiguration, WebView/WKWebView pitfalls, and unsafe URL handling. Not for writing new features.
+description: Use PROACTIVELY after any change touching auth, network calls, secrets, Keychain, biometrics (LAContext / LocalAuthentication), App Check/DeviceCheck/App Attest, WebKit, URL schemes / universal links, or the Info.plist. Reviews iOS code for plaintext secrets, ATS bypass, weak certificate pinning, Keychain access-control misconfiguration, WKWebView pitfalls, and unsafe URL handling. Not for writing new features.
 tools: Read, Grep, Glob, Bash
 skills:
   - ios-security

@@ -1,6 +1,6 @@
 ---
 name: ios-reviewer
-description: Use PROACTIVELY after any substantive Swift or SwiftUI change to review for idioms, layer violations, concurrency correctness, Sendable safety, and SwiftUI pitfalls. Invoke before opening a PR or when the user asks for a review. Not for writing new features.
+description: Use after a coherent Swift / SwiftUI change is complete — at PR time, when the user explicitly says "review", or when a multi-file feature has just been finished. Reviews for idioms, layer violations, concurrency correctness, Sendable safety, and SwiftUI pitfalls. Do NOT auto-fire after individual edits or partial / work-in-progress changes; wait until the change is logically self-contained. Not for writing new features.
 tools: Read, Grep, Glob, Bash, Skill
 skills:
   - swift-style

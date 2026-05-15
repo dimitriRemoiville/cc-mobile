@@ -1,6 +1,6 @@
 ---
 name: kmm-reviewer
-description: Use PROACTIVELY after any substantive change in the shared Kotlin Multiplatform module to review for source-set discipline, `expect`/`actual` misuse, iOS interop pitfalls, coroutine correctness, and layer violations. Invoke before opening a PR or when the user asks for a review of `shared/` code. Not for reviewing native Android or iOS UI — use the sibling reviewers for those.
+description: Use after a coherent shared-module change is complete — at PR time, when the user explicitly says "review", or when a multi-file change in `shared/` has just been finished. Reviews for source-set discipline, `expect`/`actual` misuse, iOS interop pitfalls, coroutine correctness, and layer violations. Do NOT auto-fire after individual edits or partial / work-in-progress changes; wait until the change is logically self-contained. Not for reviewing native Android or iOS UI — use the sibling reviewers for those.
 tools: Read, Grep, Glob, Bash, Skill
 skills:
   - kmm-architecture

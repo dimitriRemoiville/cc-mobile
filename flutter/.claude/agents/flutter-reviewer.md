@@ -1,6 +1,6 @@
 ---
 name: flutter-reviewer
-description: Use PROACTIVELY after any substantive Dart/Flutter code change to review for idiom, layer violations, null safety, async correctness, bloc hygiene, widget recomposition, and DI leaks. Invoke before opening a PR or when the user asks for a review. Not for writing new features.
+description: Use after a coherent Dart / Flutter change is complete — at PR time, when the user explicitly says "review", or when a multi-file feature has just been finished. Reviews for idiom, layer violations, null safety, async correctness, bloc hygiene, widget recomposition, and DI leaks. Do NOT auto-fire after individual edits or partial / work-in-progress changes; wait until the change is logically self-contained. Not for writing new features.
 tools: Read, Grep, Glob, Bash, Skill
 skills:
   - dart-style
