@@ -44,6 +44,7 @@ flutter/
     │   ├── flutter-app-skeleton/SKILL.md
     │   ├── flutter-accessibility/SKILL.md
     │   ├── flutter-performance/SKILL.md
+    │   ├── flutter-release/SKILL.md
     │   ├── flutter-security/SKILL.md
     │   ├── flutter-testing/SKILL.md
     │   ├── bloc-state/SKILL.md

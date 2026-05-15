@@ -2,6 +2,35 @@
 
 All notable changes to this repo's Claude Code configurations are logged here. Dates are UTC. See `git log` for per-change rationale.
 
+## [Unreleased]
+
+### Added
+
+- **`scripts/check-drift.sh`** — cross-stack structural-parity checker. Flags missing agent roles, missing shared commands, missing prefixed skill topics, and missing required agent frontmatter keys across the four stacks. Bash 3.2-compatible (macOS default). Allowlist mechanism (`INTENTIONAL_GAPS`, `KNOWN_DIVERGENT_COMMANDS`, `is_stack_specific_command`) for asymmetries that exist by design.
+- **`.github/workflows/validate.yml`** — CI workflow running `validate.sh` + `check-drift.sh` on every push and pull request, plus a plugin-rebuild step that fails if `plugins/` is out of sync with the source stack folders.
+- **`validate.sh` gains `check_version_alignment`** — verifies `metadata.version` in both marketplace manifests matches the highest per-plugin version, catching the split-brain risk where one bumps without the other.
+- **`kmm-performance` skill** — Darwin dispatcher choice, ObjC interop allocation costs, framework-link size, `kotlinx.serialization` cost on Darwin, Ktor engine reuse, cold-start cost on iOS. Wired into `kmm-performance-analyst`'s skill preload.
+
+### Changed
+
+- **Reviewer skill preload trimmed.** All four main reviewers (`android-reviewer`, `ios-reviewer`, `kmm-reviewer`, `flutter-reviewer`) used to preload 3–4 skills regardless of what changed. Now preload architecture + base style only; the `Skill` tool is granted so situational skills (`compose-ui`, `swiftui-views`, `swift-concurrency`, `widgets-and-screens`, `bloc-state`, etc.) load on demand based on the diff. Honors the "keep the list tight" guidance in each stack's `CLAUDE.md`.
+- **Reviewer trigger cadence standardized.** `ios-reviewer`, `kmm-reviewer`, and `flutter-reviewer` now mirror `android-reviewer`'s cautious wording: fire on coherent changes (PR time, multi-file features, explicit `/review` requests), not on partial edits. Reduces spurious mid-work reviews.
+- **`android-architecture` skill is now the canonical source of truth** for the `Outcome<T>` / `DomainError` / `runCatching.fold` pitfall rule. `android/CLAUDE.md` and `android/.claude/commands/new-feature.md` no longer restate the rule — they point at the skill.
+- **Pre-commit hooks across all four stacks short-circuit non-`git commit` Bash calls in ~5 ms** (was ~50 ms). The cheap-grep substring check on stdin runs before the Python-based JSON parser, so unrelated Bash calls (`ls`, `git status`, `./gradlew assembleDebug`) pay almost no overhead.
+- **`android-security-reviewer`** trigger list dropped the iOS-only `Keychain` keyword and replaced iOS-only `ATS misconfig` with Android's `Network Security Config misconfig`.
+- **`ios-security-reviewer`** trigger list dropped the Android-only `Keystore` keyword; biometrics spelled out as `LAContext / LocalAuthentication`; App Check / DeviceCheck broadened to include `App Attest`.
+- **`flutter-architect`** description gained the trade-off pattern list (Bloc vs. Cubit, freezed unions, feature-local DI) to match the triggering shape of the other three architects.
+- **`README.md`** "every stack ships nine agents" claim updated to reflect KMM's eight (no `kmm-a11y-reviewer`).
+- **`kmm/README.md`** skill list now lists `kmm-performance` and `kmm-release` (previously missing). `ios/README.md` and `flutter/README.md` skill lists now include `ios-release` and `flutter-release` respectively.
+
+### Removed
+
+- **`kmm-a11y-reviewer` agent** — KMM ships no shared UI, so the agent had no playbook (no `kmm-accessibility` skill ever existed) and was aspirational at best. Use `android-a11y-reviewer` / `ios-a11y-reviewer` from the native plugins instead. Drift script allowlists this gap via `INTENTIONAL_GAPS`.
+
+### Fixed
+
+- **`.lean-ctx/`** added to `.gitignore` to prevent accidental commits of the local context graph.
+
 ## [0.2.0] — 2026-05-13
 
 ### Added

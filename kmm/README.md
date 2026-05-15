@@ -38,6 +38,8 @@ kmm/
     │   ├── kmm-architecture/SKILL.md
     │   ├── kmm-app-skeleton/SKILL.md
     │   ├── kmm-ios-interop/SKILL.md
+    │   ├── kmm-performance/SKILL.md
+    │   ├── kmm-release/SKILL.md
     │   ├── kmm-testing/SKILL.md
     │   ├── shared-viewmodels/SKILL.md
     │   ├── koin-di/SKILL.md

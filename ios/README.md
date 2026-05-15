@@ -30,6 +30,7 @@ CLAUDE.md                                  # Project context & conventions
 │   ├── ios-accessibility/SKILL.md
 │   ├── ios-di/SKILL.md
 │   ├── ios-performance/SKILL.md
+│   ├── ios-release/SKILL.md               # focused release-time playbook (preloaded by ios-release-engineer)
 │   ├── ios-security/SKILL.md
 │   ├── ios-testing/SKILL.md
 │   ├── keychain-secure-storage/SKILL.md
