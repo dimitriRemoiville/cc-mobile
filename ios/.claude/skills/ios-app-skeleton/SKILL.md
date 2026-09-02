@@ -1,11 +1,13 @@
 ---
 name: ios-app-skeleton
-description: Authoritative blueprint for scaffolding a brand-new iOS app with this project's conventions. Used by /init-ios-app. Contains every file template, placeholder list, feature-flag block, and the procedure to emit a runnable splash.
+description: Authoritative blueprint for scaffolding a brand-new iOS app with this project's conventions. Used by /init-ios-app. Contains the placeholder list, feature-flag block, layout, execution order, hard rules, and post-scaffold checklist; file templates live in `references/` and are loaded step-by-step.
 ---
 
 # iOS app skeleton
 
-Template registry consumed by `/init-ios-app`. Substitute placeholders; do not improvise.
+This file is the **procedure**. The actual file templates live in sibling files under `references/` — each execution-order step points at the reference it needs. Read the spine end-to-end first, then load each referenced file when its step runs. Substitute placeholders before writing; do not improvise.
+
+**Target floor: Swift 6 / Xcode 16 / iOS 18.** Older toolchains are not silently accommodated — `/init-ios-app` Phase 1.5 stops on a mismatch rather than lowering the floor. iOS 17 is reachable only through the compatibility deltas called out in `references/app-features.md`; anything below that is a different skeleton.
 
 ## Placeholders
 
@@ -23,526 +25,71 @@ Template registry consumed by `/init-ios-app`. Substitute placeholders; do not i
 | `INCLUDE_SWIFTDATA` | `Sources/AppCore/Persistence/` + `@Model` types + container boot |
 | `INCLUDE_FIREBASE` | Firebase SPM deps + `FirebaseApp.configure()` wiring, plist reminder |
 
+## Layout
+
+**SPM-first.** The Swift package is the source of truth; the Xcode project is a thin shell that embeds it. Three products, one dependency direction: `AppCore` ← `AppFeatures` ← `App`.
+
+```
+{{APP_NAME}}/
+├── Package.swift                     # three products: AppCore, AppFeatures, App
+├── project.yml                       # xcodegen shell (optional)
+├── Sources/
+│   ├── AppCore/                      # framework-free domain — Foundation only
+│   │   ├── Outcome.swift
+│   │   ├── DomainError.swift
+│   │   ├── APIClient.swift           # protocol
+│   │   ├── KeychainStore.swift       # protocol
+│   │   └── Persistence/              # INCLUDE_SWIFTDATA only
+│   ├── AppFeatures/                  # SwiftUI views + @Observable view models
+│   │   ├── Splash/{SplashView,SplashViewModel}.swift
+│   │   └── Navigation/Destination.swift
+│   └── App/                          # the only target that knows concrete frameworks
+│       ├── {{APP_NAME}}App.swift
+│       ├── CompositionRoot.swift
+│       ├── URLSessionAPIClient.swift
+│       └── KeychainStoreLive.swift
+└── Tests/
+    ├── AppCoreTests/                 # pure domain — no simulator needed
+    └── AppFeaturesTests/             # @MainActor view-model tests
+```
+
+Why this split?
+
+- **`AppCore` stays framework-free** so its tests run under `swift test` with no simulator, and so a view model can be exercised without stubbing URLSession or the Security framework.
+- **`AppFeatures` depends on protocols, never on implementations.** `URLSessionAPIClient` and `KeychainStoreLive` live in the app target precisely so a feature cannot reach for them by accident.
+- **`App` is the composition root.** One place constructs the object graph; features receive dependencies by initializer injection. See `ios-architecture` → layer boundaries.
+
+Each feature added later mirrors `Splash/` — a stateless view, an `@Observable @MainActor` view model, a `Root` container, and a `#Preview`.
+
+## Reference files
+
+Templates live alongside this spine. Load each one when its step runs:
+
+| File | Contains | Loaded at step |
+|---|---|---|
+| [`references/root-files.md`](references/root-files.md) | `Package.swift`, `.swiftformat`, `.gitignore` | 2 |
+| [`references/app-core.md`](references/app-core.md) | `Outcome`, `DomainError`, `APIClient` protocol, `KeychainStore` protocol | 3 |
+| [`references/app-features.md`](references/app-features.md) | `SplashView`, `SplashViewModel`, `Navigation/Destination.swift` | 4 |
+| [`references/app-target.md`](references/app-target.md) | `{{APP_NAME}}App`, `CompositionRoot`, `URLSessionAPIClient`, `KeychainStoreLive` | 5 |
+| [`references/tests.md`](references/tests.md) | `OutcomeTests`, `SplashViewModelTests` | 6 |
+| [`references/project-yml.md`](references/project-yml.md) | `project.yml` for xcodegen, and when to skip it | 7 |
+| [`references/optional-swiftdata.md`](references/optional-swiftdata.md) | `INCLUDE_SWIFTDATA`: `SchemaV1`, `PersistenceContainer` | 3, 5 (only if flag on) |
+| [`references/optional-firebase.md`](references/optional-firebase.md) | `INCLUDE_FIREBASE`: SPM deps, `FirebaseApp.configure()`, per-scheme plist copy phase | 2, 10 (only if flag on) |
+
+When the procedure below names a file, the bracketed reference tells you where its template lives.
+
 ## Execution order
 
 1. Create `{{APP_NAME}}/` directory.
-2. Write `Package.swift`, `.swiftformat`, `.gitignore`, `README.md`.
-3. Write `Sources/AppCore/` (domain types, protocols).
-4. Write `Sources/AppFeatures/` (Splash feature, typed destinations).
-5. Write `Sources/App/` (composition root, URLSession client, Keychain, App entry).
-6. Write `Tests/AppCoreTests/` + `Tests/AppFeaturesTests/`.
-7. Write `project.yml` for xcodegen (or document the manual Xcode setup).
-8. `swift build`, `swift test`.
-9. (If xcodegen present) `xcodegen generate`, `xcodebuild build`.
-10. Emit manual setup note (signing, schemes, Firebase plist).
-
----
-
-## Root files
-
-### `Package.swift`
-
-```swift
-// swift-tools-version: 6.0
-import PackageDescription
-
-let package = Package(
-    name: "{{APP_NAME}}",
-    defaultLocalization: "en",
-    platforms: [.iOS(.v18)],
-    products: [
-        .library(name: "AppCore", targets: ["AppCore"]),
-        .library(name: "AppFeatures", targets: ["AppFeatures"]),
-    ],
-    dependencies: [
-        // INCLUDE_FIREBASE:
-        // .package(url: "https://github.com/firebase/firebase-ios-sdk.git", from: "<latest-stable>"),
-    ],
-    targets: [
-        .target(
-            name: "AppCore",
-            path: "Sources/AppCore"
-        ),
-        .target(
-            name: "AppFeatures",
-            dependencies: ["AppCore"],
-            path: "Sources/AppFeatures"
-        ),
-        .testTarget(
-            name: "AppCoreTests",
-            dependencies: ["AppCore"],
-            path: "Tests/AppCoreTests"
-        ),
-        .testTarget(
-            name: "AppFeaturesTests",
-            dependencies: ["AppFeatures"],
-            path: "Tests/AppFeaturesTests"
-        ),
-    ]
-)
-```
-
-### `.swiftformat`
-
-```
---swiftversion 6.0
---indent 4
---maxwidth 120
---wraparguments before-first
---wrapparameters before-first
---wrapcollections before-first
---stripunusedargs closure-only
-```
-
-### `.gitignore`
-
-```
-.DS_Store
-.build/
-.swiftpm/
-Package.resolved
-*.xcodeproj
-*.xcworkspace
-xcuserdata/
-DerivedData/
-*.hmap
-*.ipa
-*.dSYM.zip
-GoogleService-Info.plist
-```
-
----
-
-## `Sources/AppCore/`
-
-### `Outcome.swift`
-
-```swift
-import Foundation
-
-public enum Outcome<Success> {
-    case success(Success)
-    case failure(DomainError)
-}
-
-public extension Outcome {
-    func map<T>(_ transform: (Success) -> T) -> Outcome<T> {
-        switch self {
-        case .success(let value): return .success(transform(value))
-        case .failure(let error): return .failure(error)
-        }
-    }
-}
-```
-
-### `DomainError.swift`
-
-```swift
-import Foundation
-
-public enum DomainError: Error, Equatable, Sendable {
-    case network(underlying: String? = nil)
-    case unauthorized
-    case notFound
-    case server(code: Int)
-    case unknown(String? = nil)
-}
-```
-
-### `APIClient.swift`
-
-```swift
-import Foundation
-
-public protocol APIClient: Sendable {
-    func get<T: Decodable & Sendable>(_ path: String) async -> Outcome<T>
-}
-```
-
-### `KeychainStore.swift`
-
-```swift
-import Foundation
-
-public protocol KeychainStore: Sendable {
-    func set(_ value: Data, for key: String) throws
-    func get(_ key: String) throws -> Data?
-    func delete(_ key: String) throws
-}
-```
-
----
-
-## `Sources/AppFeatures/`
-
-### `Splash/SplashView.swift`
-
-```swift
-import SwiftUI
-
-public struct SplashView: View {
-    @State private var viewModel: SplashViewModel
-
-    public init(viewModel: SplashViewModel) {
-        _viewModel = State(wrappedValue: viewModel)
-    }
-
-    public var body: some View {
-        VStack {
-            Text(viewModel.message)
-                .font(.largeTitle)
-                .bold()
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(Text(viewModel.message))
-    }
-}
-
-#Preview {
-    SplashView(viewModel: SplashViewModel(displayName: "{{APP_DISPLAY_NAME}}"))
-}
-```
-
-### `Splash/SplashViewModel.swift`
-
-```swift
-import Foundation
-import Observation
-
-@Observable
-@MainActor
-public final class SplashViewModel {
-    public private(set) var message: String
-
-    public init(displayName: String) {
-        self.message = displayName
-    }
-}
-```
-
-### `Navigation/Destination.swift`
-
-```swift
-import SwiftUI
-
-public enum Destination: Hashable {
-    case splash
-}
-
-public struct AppNavigation: View {
-    @State private var path = NavigationPath()
-
-    public init() {}
-
-    public var body: some View {
-        NavigationStack(path: $path) {
-            SplashView(viewModel: SplashViewModel(displayName: "{{APP_DISPLAY_NAME}}"))
-                .navigationDestination(for: Destination.self) { destination in
-                    switch destination {
-                    case .splash:
-                        SplashView(viewModel: SplashViewModel(displayName: "{{APP_DISPLAY_NAME}}"))
-                    }
-                }
-        }
-    }
-}
-```
-
----
-
-## `Sources/App/` (app target emitted separately; Xcode-backed)
-
-### `{{APP_NAME}}App.swift`
-
-```swift
-import SwiftUI
-import AppCore
-import AppFeatures
-// INCLUDE_FIREBASE: import FirebaseCore
-
-@main
-struct {{APP_NAME}}App: App {
-    init() {
-        // INCLUDE_FIREBASE: FirebaseApp.configure()
-        _ = CompositionRoot.shared
-    }
-
-    var body: some Scene {
-        WindowGroup {
-            AppNavigation()
-        }
-    }
-}
-```
-
-### `CompositionRoot.swift`
-
-```swift
-import Foundation
-import AppCore
-
-@MainActor
-final class CompositionRoot {
-    static let shared = CompositionRoot()
-
-    let apiClient: APIClient
-    let keychain: KeychainStore
-
-    private init() {
-        let baseURL = URL(string: "https://example.invalid/")!
-        self.apiClient = URLSessionAPIClient(baseURL: baseURL)
-        self.keychain = KeychainStoreLive(service: "{{BUNDLE_ID}}")
-    }
-}
-```
-
-### `URLSessionAPIClient.swift`
-
-```swift
-import Foundation
-import AppCore
-
-final class URLSessionAPIClient: APIClient {
-    private let baseURL: URL
-    private let session: URLSession
-    private let decoder: JSONDecoder
-
-    init(baseURL: URL, session: URLSession = .shared) {
-        self.baseURL = baseURL
-        self.session = session
-        let decoder = JSONDecoder()
-        decoder.keyDecodingStrategy = .convertFromSnakeCase
-        self.decoder = decoder
-    }
-
-    func get<T: Decodable & Sendable>(_ path: String) async -> Outcome<T> {
-        let url = baseURL.appendingPathComponent(path)
-        do {
-            let (data, response) = try await session.data(from: url)
-            guard let http = response as? HTTPURLResponse else {
-                return .failure(.unknown("non-HTTP response"))
-            }
-            switch http.statusCode {
-            case 200...299:
-                let value = try decoder.decode(T.self, from: data)
-                return .success(value)
-            case 401: return .failure(.unauthorized)
-            case 404: return .failure(.notFound)
-            case 500...599: return .failure(.server(code: http.statusCode))
-            default: return .failure(.unknown("HTTP \(http.statusCode)"))
-            }
-        } catch let urlError as URLError {
-            return .failure(.network(underlying: urlError.localizedDescription))
-        } catch {
-            return .failure(.unknown(error.localizedDescription))
-        }
-    }
-}
-```
-
-### `KeychainStoreLive.swift`
-
-```swift
-import Foundation
-import Security
-import AppCore
-
-final class KeychainStoreLive: KeychainStore {
-    private let service: String
-
-    init(service: String) { self.service = service }
-
-    func set(_ value: Data, for key: String) throws {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: key,
-        ]
-        SecItemDelete(query as CFDictionary)
-        var add = query
-        add[kSecValueData as String] = value
-        add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-        let status = SecItemAdd(add as CFDictionary, nil)
-        guard status == errSecSuccess else { throw KeychainError.unhandled(status) }
-    }
-
-    func get(_ key: String) throws -> Data? {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: key,
-            kSecMatchLimit as String: kSecMatchLimitOne,
-            kSecReturnData as String: true,
-        ]
-        var out: AnyObject?
-        let status = SecItemCopyMatching(query as CFDictionary, &out)
-        switch status {
-        case errSecSuccess: return out as? Data
-        case errSecItemNotFound: return nil
-        default: throw KeychainError.unhandled(status)
-        }
-    }
-
-    func delete(_ key: String) throws {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: key,
-        ]
-        let status = SecItemDelete(query as CFDictionary)
-        guard status == errSecSuccess || status == errSecItemNotFound else {
-            throw KeychainError.unhandled(status)
-        }
-    }
-
-    enum KeychainError: Error { case unhandled(OSStatus) }
-}
-```
-
----
-
-## INCLUDE_SWIFTDATA additions
-
-Add to `Package.swift` targets only if iOS 17+ (already satisfied by iOS 18 default).
-
-### `Sources/AppCore/Persistence/SchemaV1.swift`
-
-```swift
-import Foundation
-import SwiftData
-
-public enum SchemaV1: VersionedSchema {
-    public static var versionIdentifier: Schema.Version { .init(1, 0, 0) }
-    public static var models: [any PersistentModel.Type] { [Sample.self] }
-
-    @Model
-    public final class Sample {
-        @Attribute(.unique) public var id: UUID
-        public var label: String
-        public init(id: UUID = UUID(), label: String) {
-            self.id = id
-            self.label = label
-        }
-    }
-}
-```
-
-### `Sources/App/PersistenceContainer.swift`
-
-```swift
-import Foundation
-import SwiftData
-import AppCore
-
-enum PersistenceContainer {
-    static func make() throws -> ModelContainer {
-        let schema = Schema(SchemaV1.models)
-        let config = ModelConfiguration("app", schema: schema)
-        return try ModelContainer(for: schema, configurations: config)
-    }
-}
-```
-
-## INCLUDE_FIREBASE additions
-
-In `Package.swift`, add Firebase SPM as a dependency and attach `FirebaseAnalytics`, `FirebaseCrashlytics` products to the `App` target.
-
-In `{{APP_NAME}}App.swift`, the `FirebaseApp.configure()` call in `init()` is active (uncommented).
-
-Per-scheme `GoogleService-Info.plist`:
-- dev → `GoogleService-Info-Dev.plist`.
-- prod → `GoogleService-Info-Prod.plist`.
-- Use a build-phase copy script that picks the right plist per configuration:
-
-```sh
-cp "${SRCROOT}/Config/GoogleService-Info-${CONFIGURATION}.plist" "${BUILT_PRODUCTS_DIR}/${PRODUCT_NAME}.app/GoogleService-Info.plist"
-```
-
----
-
-## Tests
-
-### `Tests/AppCoreTests/OutcomeTests.swift`
-
-```swift
-import Testing
-@testable import AppCore
-
-@Suite struct OutcomeTests {
-    @Test func mapTransformsSuccess() {
-        let out = Outcome<Int>.success(2).map { $0 * 3 }
-        switch out {
-        case .success(let v): #expect(v == 6)
-        case .failure: Issue.record("expected success")
-        }
-    }
-
-    @Test func mapPreservesFailure() {
-        let out = Outcome<Int>.failure(.notFound).map { $0 * 3 }
-        switch out {
-        case .success: Issue.record("expected failure")
-        case .failure(let e): #expect(e == .notFound)
-        }
-    }
-}
-```
-
-### `Tests/AppFeaturesTests/SplashViewModelTests.swift`
-
-```swift
-import Testing
-import Foundation
-@testable import AppFeatures
-
-@MainActor
-@Suite struct SplashViewModelTests {
-    @Test func exposesDisplayName() {
-        let vm = SplashViewModel(displayName: "{{APP_DISPLAY_NAME}}")
-        #expect(vm.message == "{{APP_DISPLAY_NAME}}")
-    }
-}
-```
-
----
-
-## `project.yml` (xcodegen)
-
-Emit this only if the user has `xcodegen` installed (`which xcodegen`). Otherwise print the equivalent manual Xcode steps.
-
-```yaml
-name: {{APP_NAME}}
-options:
-  bundleIdPrefix: {{BUNDLE_ID}}
-  deploymentTarget:
-    iOS: "18.0"
-settings:
-  base:
-    SWIFT_VERSION: "6.0"
-    DEVELOPMENT_TEAM: ""
-packages:
-  Local:
-    path: .
-targets:
-  {{APP_NAME}}:
-    type: application
-    platform: iOS
-    sources:
-      - Sources/App
-    dependencies:
-      - package: Local
-        product: AppCore
-      - package: Local
-        product: AppFeatures
-    info:
-      path: Sources/App/Info.plist
-      properties:
-        UILaunchScreen: {}
-        CFBundleDisplayName: {{APP_DISPLAY_NAME}}
-    settings:
-      base:
-        PRODUCT_BUNDLE_IDENTIFIER: {{BUNDLE_ID}}
-```
+2. Write `Package.swift`, `.swiftformat`, `.gitignore`, `README.md` — templates in `references/root-files.md`. If `INCLUDE_FIREBASE`, add the SPM dependency now (`references/optional-firebase.md`).
+3. Write `Sources/AppCore/` (domain types, protocols) — templates in `references/app-core.md`. Add `Sources/AppCore/Persistence/` behind `INCLUDE_SWIFTDATA` (`references/optional-swiftdata.md`).
+4. Write `Sources/AppFeatures/` (Splash feature, typed destinations) — templates in `references/app-features.md`.
+5. Write `Sources/App/` (composition root, URLSession client, Keychain, App entry) — templates in `references/app-target.md`. Add `PersistenceContainer` behind `INCLUDE_SWIFTDATA` (`references/optional-swiftdata.md`).
+6. Write `Tests/AppCoreTests/` + `Tests/AppFeaturesTests/` — templates in `references/tests.md`.
+7. Write `project.yml` for xcodegen (or document the manual Xcode setup) — template in `references/project-yml.md`.
+8. `swift build`, `swift test`. Both must pass before the scaffold is declared done — a package that compiles but fails its two seed tests means the wiring is wrong, not the tests.
+9. (If xcodegen present) `xcodegen generate`, then `xcodebuild -scheme {{APP_NAME}} -destination 'generic/platform=iOS' build`. This is the gate that catches signing, Info.plist, and target-membership problems that `swift build` cannot see.
+10. Emit manual setup note (signing, schemes, Firebase plist). See "Post-scaffold manual steps" below; if `INCLUDE_FIREBASE`, also see `references/optional-firebase.md`.
 
 ---
 

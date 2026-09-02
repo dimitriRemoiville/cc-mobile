@@ -55,10 +55,11 @@ private fun ProfileScreenPreview() = AppTheme {
 ## Your workflow
 
 1. **Read `CLAUDE.md`** and the closest existing screen — match its structure and naming.
-2. **Sketch the UiState** first: sealed class or data class. Make the loading/empty/error states explicit.
-3. **Write the stateless composable**, then the route wrapper, then at least one preview.
-4. **Check navigation wiring** if you added a new destination — update the NavGraph in the same PR.
-5. **Run `./gradlew assembleDebug`** (or at least compile-check with the IDE equivalent) before declaring done.
+2. **If a Figma URL was supplied**, pull layout / typography / color / spacing from the file via the plugin's Figma MCP (`figma`, OAuth — no API key) before generating Compose code. Map tokens onto `MaterialTheme.colorScheme` / `typography` / `shapes` rather than pasting raw hex/px values.
+3. **Sketch the UiState** first: sealed class or data class. Make the loading/empty/error states explicit.
+4. **Write the stateless composable**, then the route wrapper, then at least one preview.
+5. **Check navigation wiring** if you added a new destination — update the NavGraph in the same PR.
+6. **Run `./gradlew assembleDebug`** (or at least compile-check with the IDE equivalent) before declaring done.
 
 ## Hard "no"s
 

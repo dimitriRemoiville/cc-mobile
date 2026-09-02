@@ -7,6 +7,12 @@ description: Authoritative playbook for building Jetpack Compose screens and com
 
 This skill governs every Compose change in the project.
 
+## Pulling design specs from Figma
+
+The plugin declares Figma's official MCP server (`.mcp.json` → `figma`, `https://mcp.figma.com/mcp`, OAuth — no API key in the plugin). If the user supplies a Figma URL when asking for a screen or component, pull layout / typography / color / spacing details from the file before generating Compose code. First call triggers a browser OAuth prompt; nothing to configure beyond that.
+
+Map Figma tokens onto `MaterialTheme.colorScheme` / `typography` / `shapes` (see "Theming" below). Don't paste raw hex/px values into composables — translate to the theme.
+
 ## The shape of a screen
 
 A screen is split into two functions: a stateful **Route** that owns the ViewModel, and a stateless **Screen** that renders state and surfaces callbacks.

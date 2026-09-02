@@ -39,7 +39,7 @@ Confirm the plan in one short paragraph. Proceed only after confirmation.
 
 ## Phase 1 — Load the blueprint
 
-**Read `.claude/skills/android-app-skeleton/SKILL.md` in full.** It is the only source of truth for placeholders, execution order, file templates, hard rules, and post-scaffold checklist. Don't paraphrase or summarize the skill in this command — link to it.
+**Read `.claude/skills/android-app-skeleton/SKILL.md` in full.** It is the procedure spine — placeholders, execution order, hard rules, and post-scaffold checklist. The file templates live in sibling files under `references/` (e.g. `references/root-files.md`, `references/app-module.md`, `references/core-data.md`); each execution-order step in the spine names the reference it needs. Load each reference at its step rather than reading them all up front.
 
 ## Phase 1.5 — Resolve all versions online
 

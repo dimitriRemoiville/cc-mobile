@@ -1,0 +1,91 @@
+{
+  "$schema": "../../../schemas/triggers.schema.json",
+  "tier": 1,
+  "tests": [
+    {
+      "prompt": "rename this Kotlin function and tidy the !! into something safer",
+      "expected": "kotlin-style",
+      "rationale": "Kotlin naming + nullability cleanup is the canonical kotlin-style trigger."
+    },
+    {
+      "prompt": "build a Compose screen that shows a list of items with pull-to-refresh",
+      "expected": "compose-ui",
+      "rationale": "Direct match for the compose-ui description's 'building Jetpack Compose screens' trigger."
+    },
+    {
+      "prompt": "add a new Hilt module that provides the AuthRepository",
+      "expected": "hilt-di",
+      "rationale": "Hilt module creation is one of the explicit triggers in the hilt-di description."
+    },
+    {
+      "prompt": "create a Room entity and DAO for cached articles, with a migration from v3 to v4",
+      "expected": "room-persistence",
+      "rationale": "Entities, DAOs, and migrations are the core room-persistence trigger surface."
+    },
+    {
+      "prompt": "add a Retrofit service for the search endpoint and map its errors",
+      "expected": "retrofit-networking",
+      "rationale": "Retrofit service definition + error mapping is the retrofit-networking description's primary trigger."
+    },
+    {
+      "prompt": "wire a new typed Navigation Compose destination for the profile screen",
+      "expected": "navigation-compose",
+      "rationale": "Type-safe destinations are the navigation-compose description's headline trigger."
+    },
+    {
+      "prompt": "store a 'dark mode enabled' setting in DataStore",
+      "expected": "datastore-preferences",
+      "rationale": "Adding a new on-device preference is the explicit datastore-preferences trigger."
+    },
+    {
+      "prompt": "where should this new search feature's repository live — data or domain?",
+      "expected": "android-architecture",
+      "rationale": "Layer-boundary / 'where does code belong' question is the android-architecture trigger."
+    },
+    {
+      "prompt": "write a unit test for this ViewModel using Turbine and MockK",
+      "expected": "android-testing",
+      "rationale": "Turbine + MockK is verbatim from the android-testing description."
+    },
+    {
+      "prompt": "review this Compose screen for accessibility — TalkBack and tap-target sizing",
+      "expected": "android-accessibility",
+      "rationale": "TalkBack + tap-target review matches the android-accessibility description directly."
+    },
+    {
+      "prompt": "the app has cold-start jank on Pixel 6 — how do I measure and fix it?",
+      "expected": "android-performance",
+      "rationale": "Cold-start regression investigation is one of the android-performance description's trigger phrases."
+    },
+    {
+      "prompt": "store an OAuth refresh token securely on device",
+      "expected": "android-security",
+      "rationale": "Secrets / auth on-device storage is the android-security description's auth trigger."
+    },
+    {
+      "prompt": "bump versionCode and versionName and prepare a Play Console upload",
+      "expected": "android-release",
+      "rationale": "versionCode / versionName bumps and Play Console uploads are explicit android-release triggers."
+    },
+    {
+      "prompt": "scaffold a brand-new Android app with Kotlin, Compose, Hilt, and bottom-nav",
+      "expected": "android-app-skeleton",
+      "rationale": "Scaffolding a new app from scratch is the android-app-skeleton blueprint's entry point (also reachable via /init-android-app)."
+    },
+    {
+      "prompt": "what is the capital of France",
+      "expected": null,
+      "rationale": "Off-topic — must not trigger any cc-mobile-android skill (general over-firing anti-trigger)."
+    },
+    {
+      "prompt": "write a SwiftUI view that fetches a list of users from a REST API",
+      "expected": null,
+      "rationale": "iOS / SwiftUI prompt — none of the Android-specific skills should fire (cross-platform anti-trigger guarding against compose-ui or retrofit-networking over-firing)."
+    },
+    {
+      "prompt": "explain how dependency injection works in general",
+      "expected": null,
+      "rationale": "Generic DI explainer with no Android / Hilt framing — hilt-di should stay quiet for general DI theory questions."
+    }
+  ]
+}

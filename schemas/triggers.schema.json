@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gen-e2-marketplace/schemas/triggers.schema.json",
+  "title": "Plugin tier-1 trigger tests",
+  "description": "Tests that verify a given prompt routes to the correct skill (or to none). The gh-aw plugin-trigger-tests workflow runs these on every PR; the structural validator enforces presence and shape.",
+  "type": "object",
+  "required": ["tier", "tests"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Optional pointer to this schema for editor tooling (VS Code, etc.). Ignored at validation time."
+    },
+    "tier": {
+      "const": 1,
+      "description": "Tier-1 = trigger routing. Tier-2 (structural artefact assertions) and tier-3 (quality evals) are reserved for later schema versions."
+    },
+    "tests": {
+      "type": "array",
+      "minItems": 3,
+      "items": { "$ref": "#/$defs/test" },
+      "description": "At minimum 3 cases. Recommend at least one positive per model-invocable skill, plus at least one anti-trigger."
+    }
+  },
+  "$defs": {
+    "test": {
+      "type": "object",
+      "required": ["prompt", "expected", "rationale"],
+      "additionalProperties": false,
+      "properties": {
+        "prompt": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000,
+          "description": "The user prompt the router should route."
+        },
+        "expected": {
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9-]{0,63}$",
+              "description": "Skill name (kebab-case) that should fire. Must reference a real skill in the same plugin."
+            },
+            {
+              "type": "null",
+              "description": "Anti-trigger: no skill should fire for this prompt."
+            }
+          ]
+        },
+        "rationale": {
+          "type": "string",
+          "minLength": 5,
+          "maxLength": 500,
+          "description": "Why this test case exists. The LLM reviewer reads this to judge coverage."
+        }
+      }
+    }
+  }
+}
