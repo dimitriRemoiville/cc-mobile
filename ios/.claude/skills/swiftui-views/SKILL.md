@@ -1,6 +1,6 @@
 ---
 name: swiftui-views
-description: Project-specific SwiftUI conventions — the RootView/View split, the `ViewState` shape, the `@Observable @MainActor` view-model contract, and the hard nos this project enforces. Load whenever writing or editing any `View` or view model in this codebase. Navigation destinations and route plumbing live in `navigation-stack` — load that one for any nav-graph or deep-link work.
+description: Project-specific SwiftUI conventions — the RootView/View split, the `ViewState` shape, the `@Observable @MainActor` view-model contract, Figma-MCP-to-asset-catalog token translation, and the hard nos this project enforces. Load whenever writing or editing any `View` or view model in this codebase. Navigation destinations and route plumbing live in `navigation-stack` — load that one for any nav-graph or deep-link work.
 ---
 
 # SwiftUI views (project delta)
@@ -15,6 +15,18 @@ SwiftUI with the Observation framework (iOS 17+). On an existing app:
 - **Mixed UIKit + SwiftUI** (`UIHostingController`, `UIViewRepresentable`) → apply this skill to the SwiftUI half; let the UIKit half follow its own conventions.
 - **`ObservableObject` + `@Published` codebase** (pre-Observation, or an iOS 16 deployment floor) → the "no `ObservableObject`" rule is for *new* code in an `@Observable` codebase. Don't propose a migration as a side effect of an unrelated change.
 - **TCA** (`@Reducer`, `Store`, `WithViewStore`) → skip this skill entirely; TCA owns the view/state contract.
+
+## Pulling design specs from Figma
+
+The plugin declares Figma's official MCP server (`.mcp.json` → `figma`, `https://mcp.figma.com/mcp`, OAuth — no API key in the plugin). If the user supplies a Figma URL when asking for a screen or component, pull layout / typography / colour / spacing from the file before generating SwiftUI code. The first call triggers a browser OAuth prompt; nothing to configure beyond that.
+
+**Translate the tokens; don't paste the values.** A Figma frame gives you fixed hex and pt numbers, and pasting them produces a screen that ignores dark mode and stops laying out at large Dynamic Type sizes:
+
+- **Colour** → a named colour in the asset catalog (with a dark appearance), referenced as `Color("Surface")`, or a semantic system colour (`.primary`, `.secondary`). Never a `Color(hex:)` literal in a view body.
+- **Type** → the nearest semantic text style (`.body`, `.headline`, `.caption`). If the design's scale genuinely differs, define it once with `Font.custom(_:size:relativeTo:)` so it still scales — a bare `.system(size:)` does not.
+- **Spacing** → the project's spacing constants, or plain `padding` values. Don't reproduce a Figma auto-layout gap to the half-point.
+
+Where the design and the platform disagree — a 32pt tap target, a fixed-height row holding scalable text, colour-only status — follow the platform and say so in your summary. See `ios-accessibility`.
 
 ## RootView + View split (project rule)
 
@@ -124,4 +136,5 @@ The full checklist lives in `ios-accessibility`. The minimum the reviewer flags 
 - **No view model constructed inside a stateless view.** Only a `RootView` builds one, and only from the composition root.
 - **No `#Preview` that requires real IO.**
 - **No `AnyView`** without a written reason — it erases the type information the diffing engine needs.
+- **No colour or font literals in a view body.** Asset-catalog colours and semantic text styles, always — see the Figma section above.
 - **No `body` longer than ~40 lines.** Extract a subview when concerns mix or nesting passes three levels; readability is the rule, the line count is the smell.

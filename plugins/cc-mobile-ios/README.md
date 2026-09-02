@@ -44,6 +44,10 @@ Opinionated Claude Code setup for iOS apps — Swift + SwiftUI, MVVM + Clean Arc
 - `ios-performance` — Instruments, hitch rate, `LazyVStack`, image decoding.
 - `ios-app-skeleton` — canonical blueprint `/init-ios-app` drives.
 
+**MCP server**
+
+- `figma` — Figma's official MCP server (`https://mcp.figma.com/mcp`), declared in `.mcp.json`. Used by `ios-ui-engineer` and the `swiftui-views` skill: supply a Figma URL when asking for a screen and the layout, typography, colour, and spacing come from the file rather than from guesswork. **Auth is OAuth in the browser on first use** — there's no API key in the plugin and nothing to configure. If you never pass a Figma URL, the server is never contacted.
+
 ## After installing
 
 The plugin ships skills, agents, and commands. It does **not** inject a `CLAUDE.md` into your project automatically. Drop the included `CLAUDE.md` at your project root so Claude Code loads the project context on open:

@@ -1,0 +1,96 @@
+{
+  "$schema": "../../../schemas/triggers.schema.json",
+  "tier": 1,
+  "tests": [
+    {
+      "prompt": "rename this Swift function and replace the force-unwraps with something safer",
+      "expected": "swift-style",
+      "rationale": "Swift naming + optional cleanup is the canonical swift-style trigger."
+    },
+    {
+      "prompt": "this actor call is producing a Sendable warning under Swift 6 strict concurrency",
+      "expected": "swift-concurrency",
+      "rationale": "Cross-actor boundaries and Sendable are the swift-concurrency description's headline triggers; kept distinct from swift-style, which owns naming and the error contract."
+    },
+    {
+      "prompt": "build a SwiftUI screen that shows a list of orders with pull-to-refresh",
+      "expected": "swiftui-views",
+      "rationale": "Direct match for the swiftui-views description's 'writing or editing any View' trigger."
+    },
+    {
+      "prompt": "wire a new typed NavigationStack destination for the profile screen",
+      "expected": "navigation-stack",
+      "rationale": "Typed destinations are navigation-stack's headline trigger, and the description explicitly claims nav-graph work away from swiftui-views."
+    },
+    {
+      "prompt": "add a URLSession endpoint for the search API and map its errors",
+      "expected": "urlsession-networking",
+      "rationale": "Endpoint definition + error mapping is the urlsession-networking description's primary trigger."
+    },
+    {
+      "prompt": "create a SwiftData @Model for cached articles with a migration from schema v1 to v2",
+      "expected": "swiftdata-persistence",
+      "rationale": "@Model entities and VersionedSchema migrations are the core swiftdata-persistence trigger surface."
+    },
+    {
+      "prompt": "store the auth token in the Keychain instead of UserDefaults",
+      "expected": "keychain-secure-storage",
+      "rationale": "On-device secret storage is keychain-secure-storage's trigger; phrased to stay clear of ios-security, which owns trust-boundary work."
+    },
+    {
+      "prompt": "pin the TLS certificate for our auth endpoint and add App Attest to sensitive requests",
+      "expected": "ios-security",
+      "rationale": "Certificate pinning and App Attest are explicit ios-security triggers, and the prompt avoids Keychain wording so the two security skills stay separable."
+    },
+    {
+      "prompt": "wire the new OrderRepository into the composition root and give the detail screen a view-model factory",
+      "expected": "ios-di",
+      "rationale": "Wiring a repository and building a view model from the container are explicit ios-di triggers."
+    },
+    {
+      "prompt": "where should this new search feature's repository protocol live — AppCore or App?",
+      "expected": "ios-architecture",
+      "rationale": "Layer-boundary / 'where does code belong' question is the ios-architecture trigger, distinct from ios-di's wiring concern."
+    },
+    {
+      "prompt": "write a unit test for this @Observable view model using Swift Testing",
+      "expected": "ios-testing",
+      "rationale": "Swift Testing plus a @MainActor view model is verbatim from the ios-testing description."
+    },
+    {
+      "prompt": "review this SwiftUI screen for accessibility — VoiceOver and tap-target sizing",
+      "expected": "ios-accessibility",
+      "rationale": "VoiceOver + tap-target review matches the ios-accessibility description directly and is the phrase that separates it from swiftui-views."
+    },
+    {
+      "prompt": "the app has cold-start jank on iPhone 13 — how do I measure and fix it?",
+      "expected": "ios-performance",
+      "rationale": "Cold-start regression investigation is one of the ios-performance description's trigger phrases."
+    },
+    {
+      "prompt": "bump CURRENT_PROJECT_VERSION and prepare a TestFlight upload",
+      "expected": "ios-release",
+      "rationale": "Build-number bumps and TestFlight uploads are explicit ios-release triggers."
+    },
+    {
+      "prompt": "scaffold a brand-new iOS app with Swift 6, SwiftUI, and SPM modules",
+      "expected": "ios-app-skeleton",
+      "rationale": "Scaffolding a new app from scratch is the ios-app-skeleton blueprint's entry point (also reachable via /init-ios-app)."
+    },
+    {
+      "prompt": "what is the capital of France",
+      "expected": null,
+      "rationale": "Off-topic — must not trigger any cc-mobile-ios skill (general over-firing anti-trigger)."
+    },
+    {
+      "prompt": "build a Jetpack Compose screen that fetches a list of users from a REST API",
+      "expected": null,
+      "rationale": "Android / Compose prompt — none of the iOS-specific skills should fire (cross-platform anti-trigger guarding against swiftui-views or urlsession-networking over-firing)."
+    },
+    {
+      "prompt": "explain how dependency injection works in general",
+      "expected": null,
+      "rationale": "Generic DI explainer with no Swift / composition-root framing — ios-di should stay quiet for general DI theory questions."
+    }
+  ]
+}
