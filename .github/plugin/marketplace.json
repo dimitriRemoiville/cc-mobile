@@ -6,31 +6,31 @@
   },
   "metadata": {
     "description": "Opinionated mobile development plugins for Android, iOS, KMM, and Flutter — ships skills, agents, and slash commands for each stack.",
-    "version": "0.3.0"
+    "version": "0.4.0"
   },
   "plugins": [
     {
       "name": "cc-mobile-android",
       "description": "Opinionated setup for Android apps — Kotlin + Jetpack Compose, MVVM + Clean Architecture, Hilt DI, Retrofit + OkHttp + kotlinx.serialization, Room + DataStore. Ships skills, agents, and slash commands including /init-android-app to scaffold a new app end-to-end.",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "source": "./plugins/cc-mobile-android"
     },
     {
       "name": "cc-mobile-flutter",
       "description": "Opinionated setup for Flutter apps — Clean Architecture, flutter_bloc + bloc_concurrency, freezed + fpdart (Either<Failure, T>), typed go_router, get_it, dio + OpenAPI client, drift + sqlcipher. Ships skills, agents, and slash commands including /init-flutter-app to scaffold a new app end-to-end.",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "source": "./plugins/cc-mobile-flutter"
     },
     {
       "name": "cc-mobile-ios",
       "description": "Opinionated setup for iOS apps — Swift + SwiftUI, MVVM + Clean Architecture, @Observable state holders, URLSession + Codable, SwiftData + Keychain, NavigationStack typed routes. Ships skills, agents, and slash commands including /init-ios-app to scaffold a new app end-to-end.",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "source": "./plugins/cc-mobile-ios"
     },
     {
       "name": "cc-mobile-kmm",
       "description": "Opinionated setup for Kotlin Multiplatform Mobile — shared module with MVVM + Clean Architecture in commonMain, Ktor Client + kotlinx.serialization, Koin DI, shared ViewModels over StateFlow, SQLDelight, multiplatform-settings. Ships skills, agents, and slash commands including /init-kmm-app to scaffold a new shared module end-to-end.",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "source": "./plugins/cc-mobile-kmm"
     }
   ]

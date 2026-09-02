@@ -74,7 +74,7 @@ From the `ClaudeCodeMobile/` repo root:
 scripts/build-plugin.sh kmm
 ```
 
-The script reads `kmm/.claude/{skills,agents,commands}` + `kmm/CLAUDE.md` and re-packages them. The hand-authored `plugin.json` and this README are preserved across rebuilds.
+The script reads `kmm/.claude/{skills,agents,commands,hooks}` + `kmm/.claude/hooks.json` + `kmm/CLAUDE.md` and re-packages them, rewriting `.claude/…` config paths to `${CLAUDE_PLUGIN_ROOT}/…` so they resolve once installed. The hand-authored `plugin.json`, this README, `.mcp.json`, and `tests/` are preserved across rebuilds.
 
 ## Why these choices
 

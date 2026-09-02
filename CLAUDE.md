@@ -32,6 +32,14 @@ Run [scripts/check-drift.sh](scripts/check-drift.sh) to surface cross-stack stru
 
 Both run in CI via [.github/workflows/validate.yml](.github/workflows/validate.yml), which also rebuilds every plugin and fails if `plugins/` is out of sync with the source stack folders.
 
+**Keep the build script portable.** It runs on macOS (BSD tools) locally and on `ubuntu-latest` (GNU tools) in CI. `sed -i` is the classic trap — the two flavours spell the in-place flag incompatibly — so rewrite through a temp file instead. Same caution for `stat`, `readlink -f`, `date`, and `grep -P`.
+
+Skill routing is covered by tier-1 trigger tests in `plugins/<plugin>/tests/triggers.json`, shaped by [schemas/triggers.schema.json](schemas/triggers.schema.json): one positive case per model-invocable skill plus anti-triggers that pin the boundaries (off-topic, cross-platform, generic-explainer). `validate.sh` doesn't yet enforce them — they exist for the marketplace's trigger-test runner and for manual review. When you add or rename a skill, add its case.
+
 ## Dual marketplace
 
 This repo ships plugins for both **Claude Code** and **GitHub Copilot CLI** from the same source. Agent files under `<stack>/.claude/agents/` are plain `.md`; the build script copies them as `.agent.md` in the plugin directory (Copilot CLI format) and as `.md` in the `.plugin` ZIP (Claude Code format). Do not rename the source files.
+
+Because Copilot CLI is a target, don't assume a tool name is universal — `Skill` in an agent's `tools:` list is the example that bit us. Declare skills via the `skills:` frontmatter key instead.
+
+**Paths inside skills, agents, and commands are written as `.claude/skills/…`** so a stack folder still works when its `.claude/` is dropped into a project root. `build-plugin.sh` rewrites them to `${CLAUDE_PLUGIN_ROOT}/…` at package time, so plugin installs resolve too. Write the source form; don't hand-write `${CLAUDE_PLUGIN_ROOT}` outside `hooks.json` (which needs the `${CLAUDE_PLUGIN_ROOT:-.claude}` shell form because it's evaluated by a shell, not rewritten).

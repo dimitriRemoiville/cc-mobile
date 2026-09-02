@@ -17,6 +17,8 @@ This folder holds per-stack Claude Code configurations. Each subfolder is a self
 ├── README.md               # Overview of the stack's setup
 └── .claude/
     ├── settings.json       # Permissions, env
+    ├── hooks.json          # PostToolUse formatter + PreToolUse pre-commit gate
+    ├── hooks/              # Versioned hook scripts
     ├── agents/             # Specialist subagents
     ├── skills/             # Domain knowledge packs (one per topic)
     └── commands/           # Slash commands
@@ -25,6 +27,11 @@ This folder holds per-stack Claude Code configurations. Each subfolder is a self
 Claude Code picks up `CLAUDE.md` and everything under `.claude/` automatically when you open the folder.
 
 Alongside the stack folders, the repo also ships a Claude Code plugin for each stack under [`plugins/`](./plugins) and marketplace manifests for both Claude Code ([`.claude-plugin/marketplace.json`](./.claude-plugin/marketplace.json)) and Copilot CLI ([`.github/plugin/marketplace.json`](./.github/plugin/marketplace.json)). See [Distribution via marketplace](#distribution-via-marketplace).
+
+A built plugin directory carries two things the source stack folder doesn't:
+
+- **`tests/triggers.json`** — tier-1 routing tests asserting that a given prompt reaches the intended skill (or no skill at all). Shape defined by [`schemas/triggers.schema.json`](./schemas/triggers.schema.json).
+- **`.mcp.json`** — MCP servers the plugin declares. Today that's Figma's official server on the two native plugins, used when you hand `/add-screen` or `/add-view` a Figma URL. It's OAuth in the browser on first use, there's no API key in the repo, and it's never contacted unless you pass a URL. A project-root `.mcp.json` isn't something a drop-in `.claude/` folder can own, which is why it lives only in the plugin.
 
 ## Using a stack
 
@@ -113,6 +120,8 @@ Create a new sibling subfolder (e.g. `react-native/`) with the same skeleton:
 ├── README.md
 └── .claude/
     ├── settings.json
+    ├── hooks.json
+    ├── hooks/
     ├── agents/
     ├── skills/
     └── commands/
@@ -137,7 +146,7 @@ Where it's sensible, the four stacks align on the same concepts so you can move 
 | DI | Hilt | Composition root + initializer injection | Koin (Hilt is Android-only) | `get_it` per-feature modules |
 | Networking | Retrofit + OkHttp + kotlinx.serialization | URLSession + Codable | Ktor Client + kotlinx.serialization (OkHttp / Darwin engines) | `dio` + OpenAPI-generated client |
 | Routing | Navigation-Compose | `NavigationStack` typed routes | N/A (per platform) | `go_router` typed routes |
-| Error surface | sealed `Outcome<T>` carrying `DomainError` | sealed `DomainError` | sealed `DomainError` | sealed `Failure` + `Either<Failure, T>` (fpdart) |
+| Error surface | sealed `Outcome<T>` carrying `DomainError` | sealed `Outcome<T>` carrying `DomainError` | sealed `DomainError` | sealed `Failure` + `Either<Failure, T>` (fpdart) |
 | Persistence | Room + DataStore | SwiftData + `@AppStorage` + Keychain | SQLDelight (+ platform-specific KV via Koin) | drift + sqlcipher + SharedPrefs + secure storage |
 | Testing | JUnit + MockK + Turbine | Swift Testing + hand-rolled fakes | `kotlin.test` + `kotlinx-coroutines-test` + MockEngine | `flutter_test` + `bloc_test` + `mocktail` + `alchemist` |
 | Review agent | `android-reviewer` | `ios-reviewer` | `kmm-reviewer` | `flutter-reviewer` |

@@ -1,6 +1,6 @@
 {
   "name": "cc-mobile-flutter",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Opinionated Claude Code setup for Flutter apps — Clean Architecture, flutter_bloc + bloc_concurrency, freezed + fpdart (Either<Failure, T>), typed go_router, get_it, dio + OpenAPI client, drift + sqlcipher. Ships skills, agents, and slash commands including /init-flutter-app to scaffold a new app end-to-end.",
   "author": {
     "name": "Dimitri Remoiville",

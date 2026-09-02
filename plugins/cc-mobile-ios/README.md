@@ -30,19 +30,19 @@ Opinionated Claude Code setup for iOS apps — Swift + SwiftUI, MVVM + Clean Arc
 **Skills** (auto-loaded by domain)
 
 - `ios-architecture` — layer rules per feature, composition root patterns.
-- `swift-style` — Swift idioms, naming, value vs reference semantics, optionals.
-- `swift-concurrency` — `async/await`, actors, `Task`, `@MainActor`, cancellation.
-- `swiftui-views` — View composition, state hoisting, environment, previews.
+- `swift-style` — the project delta only: `Outcome<Success>` / `DomainError` contract, typed IDs, use-case naming, target boundaries, logging privacy.
+- `swift-concurrency` — the isolation map (`@MainActor` view models, `actor` repositories), the cancellation contract, `@concurrent` offloading, the hard nos.
+- `swiftui-views` — the RootView/View split, `ViewState` shape, the `@Observable @MainActor` contract, Figma-to-asset-catalog token translation.
 - `navigation-stack` — typed routes, value-driven navigation, deep links.
 - `ios-di` — composition root + initializer injection (no magic container).
-- `urlsession-networking` — decoding, interceptors via `URLProtocol`, error mapping.
+- `urlsession-networking` — the `APIClient` protocol boundary, DTO/domain separation, where `APIError` stops and `DomainError` starts, the `URLProtocol` test seam.
 - `swiftdata-persistence` — model schema, migrations, queries, testing.
-- `keychain-secure-storage` — access groups, access control, secrets hygiene.
-- `ios-testing` — Swift Testing + fakes + `ViewInspector`-style view tests.
+- `keychain-secure-storage` — the single `KeychainStore` seam, `ThisDeviceOnly` accessibility policy, `.biometryCurrentSet` gating, access-group sharing.
+- `ios-testing` — Swift Testing for units, XCTest for UI, `@MainActor` view-model suites, stubs vs fakes, the `MockURLProtocol` seam.
 - `ios-accessibility` — semantics, traits, Dynamic Type, rotor navigation.
-- `ios-security` — ATS, CryptoKit, secure enclaves, secrets scanning.
+- `ios-security` — ATS, SPKI cert pinning with rotation, App Attest, file protection, WebKit and URL-scheme rules.
 - `ios-performance` — Instruments, hitch rate, `LazyVStack`, image decoding.
-- `ios-app-skeleton` — canonical blueprint `/init-ios-app` drives.
+- `ios-app-skeleton` — canonical blueprint `/init-ios-app` drives; a procedure spine plus file templates under `references/`, loaded step by step.
 
 **MCP server**
 
@@ -81,7 +81,7 @@ From the `ClaudeCodeMobile/` repo root:
 scripts/build-plugin.sh ios
 ```
 
-The script reads `ios/.claude/{skills,agents,commands}` + `ios/CLAUDE.md` and re-packages them. The hand-authored `plugin.json` and this README are preserved across rebuilds.
+The script reads `ios/.claude/{skills,agents,commands,hooks}` + `ios/.claude/hooks.json` + `ios/CLAUDE.md` and re-packages them, rewriting `.claude/…` config paths to `${CLAUDE_PLUGIN_ROOT}/…` so they resolve once installed. The hand-authored `plugin.json`, this README, `.mcp.json`, and `tests/` are preserved across rebuilds.
 
 ## Why these choices
 

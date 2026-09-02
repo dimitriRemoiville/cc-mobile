@@ -24,25 +24,26 @@ This is the iOS counterpart to the Android stack one folder over. Conventions ar
 
 ## Package / folder layout
 
-A typical feature looks like:
+**SPM-first: three targets, one dependency direction** — `AppCore` ← `AppFeatures` ← `App`. This is what `/init-ios-app` scaffolds and what `ios-architecture` describes.
 
 ```
-Feature_X/
-├── Data/
-│   ├── Remote/      # URLSession client + DTOs (Codable)
-│   ├── Local/       # SwiftData models + persistence
-│   ├── Mapper/      # DTO ↔ Domain model
-│   └── Repository/  # RepositoryImpl (conforms to Domain protocol)
-├── Domain/
-│   ├── Model/       # Plain Swift structs
-│   ├── Repository/  # Repository protocols
-│   └── UseCase/     # One type per action
-└── Presentation/
-    ├── <Feature>/   # View + ViewModel + ViewState + ViewEvent
-    └── Navigation/  # Route / Destination enums
+Sources/
+├── AppCore/          # framework-free domain — Foundation only
+│   ├── Outcome.swift, DomainError.swift
+│   ├── <Feature>/Model/, Repository/ (protocols), UseCase/
+│   └── APIClient.swift, KeychainStore.swift   # protocols
+├── AppFeatures/      # SwiftUI views + @Observable view models
+│   ├── <Feature>/{<Feature>RootView, <Feature>View, <Feature>ViewModel, <Feature>ViewState}.swift
+│   └── Navigation/Destination.swift
+└── App/              # the only target that knows concrete frameworks
+    ├── CompositionRoot.swift
+    ├── URLSessionAPIClient.swift, KeychainStoreLive.swift
+    └── Live<Feature>Repository.swift          # DTOs + mappers live here
 ```
 
-Dependency direction is always **Presentation → Domain ← Data**. The Domain layer is a pure Swift module with no `SwiftUI`, `UIKit`, `Foundation.URLSession`, or `SwiftData` imports. `Foundation` is fine.
+Dependency direction is always **App → AppFeatures → AppCore**. `AppCore` imports `Foundation` and nothing else — no `SwiftUI`, `UIKit`, `URLSession`, `SwiftData`, or `Security`. That constraint is what lets `AppCoreTests` run under `swift test` with no simulator, and it's enforced by the target boundary rather than by convention.
+
+On an existing single-target app the targets don't exist, but the rule does — enforce it by review instead of by compiler.
 
 ## Conventions
 
@@ -84,7 +85,7 @@ Dependency direction is always **Presentation → Domain ← Data**. The Domain 
 ## What Claude should do
 
 - **Prefer editing existing files** to creating new ones. Only create files when a new feature genuinely needs them.
-- **Respect layer boundaries.** No `SwiftUI`/`UIKit`/`SwiftData`/`URLSession` imports in `Domain/`.
+- **Respect layer boundaries.** No `SwiftUI` / `UIKit` / `SwiftData` / `URLSession` / `Security` imports in `AppCore`, and no concrete implementation types in `AppFeatures` — it depends on protocols only.
 - **Write tests** for new use cases and view models. Prefer **Swift Testing** (`@Test`) for new test targets; extend existing XCTest targets rather than duplicating.
 - **Use `@Observable` for view models.** Do not use `ObservableObject` / `@Published` in new code unless the app targets < iOS 17.
 - **Honour Swift 6 strict concurrency.** If a type needs `Sendable`, add it explicitly. Don't suppress warnings with `@unchecked Sendable` without justification.

@@ -82,7 +82,7 @@ From the `ClaudeCodeMobile/` repo root:
 scripts/build-plugin.sh flutter
 ```
 
-This reads `flutter/.claude/{skills,agents,commands}` + `flutter/CLAUDE.md` and re-packages them into `plugins/cc-mobile-flutter/` (directory with `.agent.md` agents for Copilot CLI) and `plugins/cc-mobile-flutter.plugin` (ZIP with `.md` agents for Claude Code). The hand-authored `plugin.json` and this README are preserved across rebuilds.
+This reads `flutter/.claude/{skills,agents,commands,hooks}` + `flutter/.claude/hooks.json` + `flutter/CLAUDE.md`, rewrites `.claude/…` config paths to `${CLAUDE_PLUGIN_ROOT}/…` so they resolve once installed, and re-packages them into `plugins/cc-mobile-flutter/` (directory with `.agent.md` agents for Copilot CLI) and `plugins/cc-mobile-flutter.plugin` (ZIP with `.md` agents for Claude Code). The hand-authored `plugin.json` and this README are preserved across rebuilds.
 
 ## Why these choices
 

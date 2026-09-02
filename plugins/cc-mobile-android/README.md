@@ -30,18 +30,22 @@ Opinionated Claude Code setup for Android apps — Kotlin + Jetpack Compose, MVV
 **Skills** (auto-loaded by domain)
 
 - `android-architecture` — layer rules per feature.
-- `kotlin-style` — naming, nullability, coroutines, Flow, scope functions.
-- `compose-ui` — Material 3, state hoisting, recomposition, previews, accessibility.
+- `kotlin-style` — the project delta only: `Outcome<T>` / `DomainError` contract, the `runCatching → toOutcome` rule, typed IDs, use-case naming, coroutine rules.
+- `compose-ui` — the Route/Screen split, `UiState` / `UiEvent` shape, Figma-to-`MaterialTheme` translation, and the hard nos.
 - `navigation-compose` — typed destinations, arguments, deep links.
 - `hilt-di` — modules, ViewModel injection, tests.
 - `retrofit-networking` — service interfaces, interceptors, error mapping, DTO boundaries.
 - `room-persistence` — entities, DAOs, migrations, test strategies.
 - `datastore-preferences` — Preferences vs Proto DataStore, migration from SharedPreferences.
-- `android-testing` — JUnit + MockK + Turbine + Compose UI tests + Hilt-aware instrumentation.
+- `android-testing` — `Outcome` in mock returns, the analytics-on-init assertion, fakes vs mocks, `@BindValue` for Hilt tests.
 - `android-accessibility` — semantics, focus, contentDescription, contrast.
-- `android-security` — Keystore, EncryptedSharedPreferences, SSL pinning, R8 rules.
+- `android-security` — Keystore-backed secrets via Tink (`EncryptedSharedPreferences` is deprecated), cert pinning, manifest exposure, PendingIntent flags.
 - `android-performance` — Baseline Profiles, `remember` discipline, `LazyColumn` keys.
-- `android-app-skeleton` — canonical blueprint `/init-android-app` drives.
+- `android-app-skeleton` — canonical blueprint `/init-android-app` drives; a procedure spine plus file templates under `references/`, loaded step by step.
+
+**MCP server**
+
+- `figma` — Figma's official MCP server (`https://mcp.figma.com/mcp`), declared in `.mcp.json`. Used by `android-ui-engineer` and the `compose-ui` skill: supply a Figma URL when asking for a screen and the layout, typography, colour, and spacing come from the file rather than from guesswork, mapped onto `MaterialTheme.*` rather than pasted as raw hex/px. **Auth is OAuth in the browser on first use** — there's no API key in the plugin and nothing to configure. If you never pass a Figma URL, the server is never contacted.
 
 ## After installing
 
@@ -76,7 +80,7 @@ From the `ClaudeCodeMobile/` repo root:
 scripts/build-plugin.sh android
 ```
 
-The script reads `android/.claude/{skills,agents,commands}` + `android/CLAUDE.md` and re-packages them. The hand-authored `plugin.json` and this README are preserved across rebuilds.
+The script reads `android/.claude/{skills,agents,commands,hooks}` + `android/.claude/hooks.json` + `android/CLAUDE.md` and re-packages them, rewriting `.claude/…` config paths to `${CLAUDE_PLUGIN_ROOT}/…` so they resolve once installed. The hand-authored `plugin.json`, this README, `.mcp.json`, and `tests/` are preserved across rebuilds.
 
 ## Why these choices
 

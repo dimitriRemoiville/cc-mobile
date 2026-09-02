@@ -6,7 +6,7 @@
   },
   "metadata": {
     "description": "Claude Code setups for mobile stacks — Android, iOS, KMM, and Flutter. Each plugin ships opinionated skills, agents, and slash commands (including a from-zero /init-<stack>-app scaffolder).",
-    "version": "0.3.0"
+    "version": "0.4.0"
   },
   "plugins": [
     {
