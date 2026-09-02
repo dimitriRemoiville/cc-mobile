@@ -198,20 +198,29 @@ rewrite_plugin_root() {
   local -a targets=()
 
   for d in skills agents commands; do
-    [[ -d "$plugin_dir/$d" ]] && targets+=("$plugin_dir/$d")
+    if [[ -d "$plugin_dir/$d" ]]; then targets+=("$plugin_dir/$d"); fi
   done
-  [[ -f "$plugin_dir/CLAUDE.md" ]] && targets+=("$plugin_dir/CLAUDE.md")
-  [[ ${#targets[@]} -eq 0 ]] && return 0
+  if [[ -f "$plugin_dir/CLAUDE.md" ]]; then targets+=("$plugin_dir/CLAUDE.md"); fi
+  if [[ ${#targets[@]} -eq 0 ]]; then return 0; fi
 
   # Anchored on the opening backtick: every such reference in the source tree
   # is written as an inline-code path, so this can't touch prose.
+  #
+  # Rewrite via a temp file rather than `sed -i`: the in-place flag is not
+  # portable. BSD sed (macOS) requires a backup suffix argument, GNU sed (the
+  # CI runner) requires the suffix be attached to the flag, and each rejects
+  # the other's spelling. Redirecting sidesteps the difference entirely.
   local pattern='`\.claude/(skills|agents|commands|hooks)/'
-  local count=0
+  local script='s#`\.claude/(skills|agents|commands|hooks)/#`${CLAUDE_PLUGIN_ROOT}/\1/#g'
+  local count=0 tmp
+  tmp="$(mktemp)"
   while IFS= read -r -d '' f; do
     grep -Eq "$pattern" "$f" || continue
-    sed -i '' -E 's#`\.claude/(skills|agents|commands|hooks)/#`${CLAUDE_PLUGIN_ROOT}/\1/#g' "$f"
+    sed -E "$script" "$f" > "$tmp"
+    cat "$tmp" > "$f"   # preserves the original file's mode
     count=$((count + 1))
   done < <(find "${targets[@]}" -type f -name '*.md' -print0)
+  rm -f "$tmp"
 
   info "rewrote .claude/ → \${CLAUDE_PLUGIN_ROOT}/ in $count file(s)"
 }
