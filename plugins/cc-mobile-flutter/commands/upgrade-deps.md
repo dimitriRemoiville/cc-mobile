@@ -23,7 +23,7 @@ Upgrade dependencies declared in `pubspec.yaml`. Resolution is done by walking e
    - Skip any line with a trailing `# pin: <reason>` comment.
    - Group output by area: Flutter core (`flutter_bloc`, `bloc`, `go_router`, `go_router_builder`, `get_it`), networking (`dio`, `retrofit`, `pretty_dio_logger`), persistence (`drift`, `sqflite`, `shared_preferences`, `flutter_secure_storage`), codegen (`freezed`, `freezed_annotation`, `json_serializable`, `json_annotation`, `build_runner`), Firebase (`firebase_core` + all `firebase_*` plugins), testing (`mocktail`, `bloc_test`, `alchemist`, `golden_toolkit`, `flutter_test` SDK), other.
 
-5. **Compatibility traps** — cross-link `.claude/skills/flutter-app-skeleton/SKILL.md`'s "Compatibility traps" table if present; otherwise enforce these by hand:
+5. **Compatibility traps** — cross-link `${CLAUDE_PLUGIN_ROOT}/skills/flutter-app-skeleton/SKILL.md`'s "Compatibility traps" table if present; otherwise enforce these by hand:
    - **Flutter SDK ↔ Dart SDK** move together. If `environment.flutter` or `environment.sdk` in `pubspec.yaml` is bumped, both bounds must reflect the same Flutter release.
    - **`firebase_core` + all `firebase_*` plugins** must move on the same major together. A single out-of-sync plugin breaks the iOS pod resolution. Either bump them all or skip the Firebase group.
    - **`freezed` ↔ `freezed_annotation`** and **`json_serializable` ↔ `json_annotation`** majors stay aligned.

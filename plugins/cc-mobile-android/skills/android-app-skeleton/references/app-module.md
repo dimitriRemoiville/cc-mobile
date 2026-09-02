@@ -2,6 +2,22 @@
 
 `app/build.gradle.kts`, `proguard-rules.pro`, manifest, strings, themes, the `{{APP_CLASS}}` Application, `MainActivity`, `core/ui/theme/AppTheme.kt`, `core/navigation/AppNavGraph.kt`, and the `home/ui/{HomeViewModel,HomeScreen}.kt` shell. Loaded at execution-order steps 3, 4, 7, and 8.
 
+## Contents
+
+Jump to the section you need — these are independent templates and can be loaded individually.
+
+- [`app/build.gradle.kts`](#appbuildgradlekts) — step 3 (single-module manifest + dependencies; flavors + signing config + Firebase guard)
+- [`app/proguard-rules.pro`](#appproguard-rulespro) — step 3
+- [`app/src/main/AndroidManifest.xml`](#appsrcmainandroidmanifestxml) — step 4
+- [`app/src/main/res/values/strings.xml`](#appsrcmainresvaluesstringsxml) — step 4
+- [`app/src/main/res/values/themes.xml`](#appsrcmainresvaluesthemesxml) — step 4
+- [`{{APP_CLASS}}.kt`](#appsrcmainjavapackage_pathapp_classkt) — step 8 (Hilt Application + Coil `SingletonImageLoader.Factory`)
+- [`MainActivity.kt`](#appsrcmainjavapackage_pathmainactivitykt) — step 8
+- [`core/ui/theme/AppTheme.kt`](#appsrcmainjavapackage_pathcoreuithemeappthemekt) — step 7 (Material 3 + dynamic color guard)
+- [`core/navigation/AppNavGraph.kt`](#appsrcmainjavapackage_pathcorenavigationappnavgraphkt) — step 7 (top-level nav, `Home` as start destination)
+- [`home/ui/HomeViewModel.kt`](#appsrcmainjavapackage_pathhomeuihomeviewmodelkt) — step 8 (canonical analytics-from-init pattern)
+- [`home/ui/HomeScreen.kt`](#appsrcmainjavapackage_pathhomeuihomescreenkt) — step 8 (bottom-nav shell + nested NavHost)
+
 ## `app/build.gradle.kts`
 
 ```kts

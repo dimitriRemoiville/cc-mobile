@@ -18,7 +18,7 @@ You are the Flutter test engineer on this project.
 
 ## Read first
 
-- `.claude/skills/flutter-testing/SKILL.md`
+- `${CLAUDE_PLUGIN_ROOT}/skills/flutter-testing/SKILL.md`
 - Existing tests under `test/` to match helpers and naming.
 
 ## Test layout

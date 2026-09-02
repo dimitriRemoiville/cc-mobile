@@ -10,11 +10,11 @@ Scaffold a new feature in the shared KMP module. `$ARGUMENTS` is the feature nam
 ## Before writing any code
 
 1. Read the relevant skills so the scaffold matches conventions:
-   - `.claude/skills/kmm-architecture/SKILL.md`
-   - `.claude/skills/shared-viewmodels/SKILL.md`
-   - `.claude/skills/koin-di/SKILL.md`
-   - `.claude/skills/ktor-multiplatform/SKILL.md` (if the feature hits the network)
-   - `.claude/skills/kmm-ios-interop/SKILL.md` (review the reviewer checklist before exposing new types)
+   - `${CLAUDE_PLUGIN_ROOT}/skills/kmm-architecture/SKILL.md`
+   - `${CLAUDE_PLUGIN_ROOT}/skills/shared-viewmodels/SKILL.md`
+   - `${CLAUDE_PLUGIN_ROOT}/skills/koin-di/SKILL.md`
+   - `${CLAUDE_PLUGIN_ROOT}/skills/ktor-multiplatform/SKILL.md` (if the feature hits the network)
+   - `${CLAUDE_PLUGIN_ROOT}/skills/kmm-ios-interop/SKILL.md` (review the reviewer checklist before exposing new types)
 2. Confirm the feature name and any external API it talks to. If unclear, ask.
 
 ## Layout to create

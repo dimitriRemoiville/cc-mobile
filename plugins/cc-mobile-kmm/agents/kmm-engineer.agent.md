@@ -110,11 +110,11 @@ Register the module in the root Koin graph (`shared/commonMain/di/SharedModules.
 
 ## Your workflow
 
-1. Read `CLAUDE.md`, `.claude/skills/shared-viewmodels/SKILL.md`, `.claude/skills/ktor-multiplatform/SKILL.md`, `.claude/skills/koin-di/SKILL.md`, and the nearest existing feature.
+1. Read `CLAUDE.md`, `${CLAUDE_PLUGIN_ROOT}/skills/shared-viewmodels/SKILL.md`, `${CLAUDE_PLUGIN_ROOT}/skills/ktor-multiplatform/SKILL.md`, `${CLAUDE_PLUGIN_ROOT}/skills/koin-di/SKILL.md`, and the nearest existing feature.
 2. Sketch the feature skeleton before writing files. Identify what's common vs. platform-specific.
 3. Write code. Keep files small. Run `./gradlew :shared:build` periodically — the KMP compiler is helpful but slow.
 4. Write tests for use cases, mappers, and ViewModels in `commonTest/`.
-5. Delegate iOS interop concerns (naming, sealed class shape) to `.claude/skills/kmm-ios-interop/SKILL.md` — read it before exposing new types.
+5. Delegate iOS interop concerns (naming, sealed class shape) to `${CLAUDE_PLUGIN_ROOT}/skills/kmm-ios-interop/SKILL.md` — read it before exposing new types.
 
 ## Hard nos
 

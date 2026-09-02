@@ -1,6 +1,6 @@
 ---
 name: android-app-skeleton
-description: Authoritative blueprint for scaffolding a brand-new Android app with this project's conventions. Used by /init-android-app. Contains the placeholder list, feature-flag block, layout, execution order, hard rules, and post-scaffold checklist; file templates live in `references/` and are loaded step-by-step.
+description: Load when scaffolding a brand-new Android app from scratch (Kotlin + Jetpack Compose + Hilt + Clean Architecture). Authoritative blueprint used by /init-android-app — placeholder list, feature-flag block, layout, execution order, hard rules, and post-scaffold checklist. File templates live in `references/` and are loaded step-by-step (progressive disclosure).
 ---
 
 # Android app skeleton

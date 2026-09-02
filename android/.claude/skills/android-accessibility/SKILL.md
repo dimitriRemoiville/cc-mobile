@@ -1,33 +1,31 @@
 ---
 name: android-accessibility
-description: A11y patterns for this Android project — semantics modifiers, content descriptions, tap target sizing, TalkBack verification, dynamic type, RTL. Load whenever adding or reviewing a Compose screen.
+description: Project-specific Compose accessibility conventions — the `mergeDescendants` rule for visually-grouped composables, the `fontScale = 2.0` preview mandate, the RTL preview pattern, and the live-region escalation rule. Load whenever adding or reviewing a Compose screen.
 ---
 
-# Android accessibility
+# Android accessibility (project delta)
 
-## The baseline
+For Compose accessibility fundamentals — `Modifier.semantics`, `contentDescription`, `Role`, `mergeDescendants`, `clearAndSetSemantics`, `liveRegion`, `traversalIndex`, `minimumInteractiveComponentSize()`, custom actions — read the [official Compose accessibility guide](https://developer.android.com/develop/ui/compose/accessibility) and the [accessibility for adaptive apps](https://developer.android.com/develop/ui/compose/touch-input/pointer-input/scroll/scroll-modifier) supplements. This file documents only the project's conventions on top of those.
 
-Every interactive element has:
-- A stable tap target of at least **48dp x 48dp** (`Modifier.minimumInteractiveComponentSize()` on anything that isn't already a Material widget).
-- A meaningful accessible name. `Text` content is already announced. Icons and custom controls need `contentDescription` or `Modifier.semantics`.
-- A correct role so TalkBack reads "button" / "switch" / "checked" instead of announcing the visual only.
+## When this applies
 
-## Content descriptions
+Jetpack Compose accessibility. On an existing app:
 
-- Decorative icons: `contentDescription = null`.
-- Functional icons: a **short, action-verb** description — "Delete", not "A trash can icon".
-- Images with informational value: description of meaning, not of pixels.
+- **View-based UI** → the principles transfer (tap targets ≥ 48dp, content descriptions, dynamic type) but the API surface is different (`AccessibilityDelegate`, `android:contentDescription`, `android:importantForAccessibility`). Don't push Compose APIs.
+- **Mixed Compose + View** → apply this skill only to Compose surfaces.
 
-```kotlin
-Icon(
-    imageVector = Icons.Default.Delete,
-    contentDescription = stringResource(R.string.cd_delete_order),
-)
-```
+## Baseline (project enforcement)
 
-## Semantics composition
+Every interactive element ships with:
+- **Tap target ≥ 48dp × 48dp.** `Modifier.minimumInteractiveComponentSize()` on any custom clickable that isn't already a Material widget.
+- **Accessible name.** `Text` content auto-announces; icons/custom controls need `contentDescription` or `Modifier.semantics`.
+- **Correct `role`** so TalkBack reads "button" / "switch" / "checked" — not the visual only.
 
-Group visually-separate composables into one accessible node when they represent one concept:
+`contentDescription` is a **short action verb**, not a description of pixels ("Delete", not "A trash can icon"). Decorative icons use `contentDescription = null` explicitly — never an empty string.
+
+## Group with `mergeDescendants` (project rule)
+
+When a `Row` / `Column` represents one logical concept (one row, one card, one list item), **always** merge its descendants into a single accessible node:
 
 ```kotlin
 Row(
@@ -40,46 +38,26 @@ Row(
 ) {
     AsyncImage(...)
     Column { Text(episode.title); Text(episode.duration) }
-    Icon(Icons.Default.PlayArrow, contentDescription = null) // merged above
+    Icon(Icons.Default.PlayArrow, contentDescription = null)  // merged above
 }
 ```
 
-- `mergeDescendants = true` collapses children into a single accessible node.
-- `clearAndSetSemantics { ... }` replaces everything underneath — use sparingly.
+Without `mergeDescendants = true`, TalkBack reads each child as a separate node and the list becomes a swipe slog. The reviewer flags any `Row` / `Column` with `clickable` and multiple children that doesn't merge.
 
-## Custom semantics
+`clearAndSetSemantics { ... }` replaces everything below — use **only** when the auto-generated semantics are actively wrong (e.g. a custom slider). It's a sharper tool than the project usually needs.
 
-Custom gestures / non-standard widgets must expose state and actions:
+## `fontScale = 2.0` preview mandate
 
-```kotlin
-Modifier.semantics {
-    role = Role.Checkbox
-    stateDescription = if (checked) "selected" else "not selected"
-    toggleableState = if (checked) ToggleableState.On else ToggleableState.Off
-    onClick(label = "Toggle") { onToggle(); true }
-}
-```
-
-Drag handles, sliders, and carousels benefit from `CustomAccessibilityAction` so TalkBack users can trigger the same affordance without the gesture.
-
-## Text sizing
-
-- Always use `sp` for text — system font scaling respects it.
-- Layouts must survive `fontScale = 2.0`. Test it in previews:
+Every screen ships with a `fontScale = 2.0f` preview alongside its default one:
 
 ```kotlin
 @Preview(fontScale = 2.0f, showBackground = true)
 @Composable fun OrderRow_LargeFont() = AppTheme { OrderRow(previewOrder) }
 ```
 
-- No fixed-height text containers. Use `wrapContentHeight()` or intrinsic sizing.
-- Truncation is fine; hiding content is not. Either show the full text after scaling or provide an expand affordance.
+Layouts must survive font scaling. **No fixed-height text containers** — use `wrapContentHeight()` or intrinsic sizing. Truncation with an expand affordance is fine; hiding content is not. The reviewer rejects screens that lack a large-font preview.
 
-## RTL
-
-- Use `start`/`end` modifiers, never `left`/`right`. Compose Modifier API is RTL-aware by default for `padding(start = ...)`, `PaddingValues`, `Arrangement`, `Alignment`.
-- For custom drawing, check `LocalLayoutDirection.current` and mirror.
-- Preview with `LocalLayoutDirection` forced to RTL:
+## RTL preview pattern
 
 ```kotlin
 @Preview @Composable fun OrderRow_Rtl() =
@@ -88,35 +66,20 @@ Drag handles, sliders, and carousels benefit from `CustomAccessibilityAction` so
     }
 ```
 
-## Focus and traversal order
+Use `start` / `end` in modifiers (never `left` / `right`). Compose is RTL-aware by default for `padding(start = ...)`, `PaddingValues`, `Arrangement`, `Alignment`. Custom drawing must read `LocalLayoutDirection.current` and mirror manually.
 
-Reading order matches declaration order. If visuals diverge from semantic order, set `semantics { traversalIndex = 1f }` on the out-of-order node.
+## Live regions vs `announceForAccessibility`
 
-## Live announcements
+For non-visual feedback (error banner, validation, status change):
 
-For non-visual feedback (error banner, form validation), announce:
-
-```kotlin
-LaunchedEffect(errorMessage) {
-    errorMessage?.let { view.announceForAccessibility(it) }
-}
-```
-
-Or use `Modifier.semantics { liveRegion = LiveRegionMode.Polite }` on the visible error text.
-
-## TalkBack testing checklist
-
-1. **Navigate** — swipe right through every screen; every interactive element gets focus in a sensible order.
-2. **Activate** — double-tap any element; the right action fires.
-3. **Custom actions** — three-finger down-then-right to open menu on custom widgets.
-4. **Focus after navigation** — landing on a new screen should announce the title and focus the first meaningful element.
-
-Automated checks complement (don't replace) this. Use Espresso `AccessibilityChecks.enable()` on UI tests.
+- **Preferred — `Modifier.semantics { liveRegion = LiveRegionMode.Polite }`** on the visible error text. The status text and the announcement stay coupled; visible UI is the source of truth.
+- **Fall back to `view.announceForAccessibility(...)`** in a `LaunchedEffect` only when there's no visible element to attach a live region to (toast-like notifications). This route bypasses TalkBack's queue and can race with other announcements.
 
 ## Hard nos
 
-- No `contentDescription = ""` to suppress. Use `null` for decorative images.
-- No `Modifier.clickable` on a `Text` without a role — TalkBack will call it "double-tap to activate" instead of "button".
-- No hard-coded `dp` text.
-- No `Modifier.size(32.dp)` around a touch target — wrap in `minimumInteractiveComponentSize()` or size at 48dp minimum.
-- No testing only on the default font scale.
+- **No `contentDescription = ""`** to suppress — use `null` for decorative images. An empty string still announces "image".
+- **No `Modifier.clickable` on a `Text`** without `Modifier.semantics { role = Role.Button }`. TalkBack reads it as "double-tap to activate" instead of "button," which the user can't distinguish from a switch or link.
+- **No hard-coded `dp` text.** Always `sp` so font scaling respects the user's setting.
+- **No `Modifier.size(32.dp)`** around a touch target — wrap in `minimumInteractiveComponentSize()` or size at 48dp minimum.
+- **No testing only on the default font scale.** The 2.0 preview is non-negotiable.
+- **No `mergeDescendants` omitted** on a `clickable` row with multiple visual children. TalkBack swipe order grows in proportion to how many of these slip in.

@@ -1,132 +1,76 @@
 ---
 name: datastore-preferences
-description: DataStore patterns for this Android project — Preferences DataStore for key/value, Proto DataStore for structured state, migrating off SharedPreferences, scoping, and multi-process gotchas. Load whenever adding a new setting or on-device preference.
+description: Project-specific DataStore conventions — repository wrapping mandate, IOException catch on the read path, Preferences-vs-Proto heuristic, Tink-not-ESP alignment, and the multi-process gotcha. Load whenever adding a new setting or on-device preference.
 ---
 
-# DataStore
+# DataStore (project delta)
 
-## Which variant
+For Jetpack DataStore fundamentals — the `preferencesDataStore by` delegate, `dataStore(fileName = ..., serializer = ...)` for Proto, `Preferences` key types, `SharedPreferencesMigration`, basic read/write — read the [official DataStore guide](https://developer.android.com/topic/libraries/architecture/datastore). The canonical `AppPreferences` + `DataStoreModule` templates live in `.claude/skills/android-app-skeleton/references/optional-datastore.md`. This file documents only the project's specific decisions.
 
-- **Preferences DataStore** — free-form typed keys (`stringPreferencesKey`, `booleanPreferencesKey`). Use for a handful of independent toggles and scalars.
-- **Proto DataStore** — a single protobuf (or `kotlinx.serialization`) message as the whole store. Use when values are related (onboarding state, feature config, filters), or when type-safety across keys matters.
+## When this applies
 
-If you would write more than ~10 keys in a Preferences store, you want Proto.
+Jetpack DataStore (Preferences or Proto). On an existing app:
 
-## Single top-level instance
+- **SharedPreferences-only** → don't push a DataStore migration unless asked. The migration helper exists, but the SharedPreferences code may be working fine.
+- **MMKV / Tink-encrypted stores** → skip; not drop-in equivalents, and migrating off them has security implications.
 
-Never construct a `DataStore` ad hoc. One instance per file, injected via Hilt.
+## Preferences vs Proto — project heuristic
 
-```kotlin
-private val Context.settingsDataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
+- **Preferences DataStore**: a handful of independent toggles and scalars.
+- **Proto DataStore**: a single message as the whole store. Use when values are related (onboarding state, feature config, filters), or when type-safety across keys matters.
 
-@Module
-@InstallIn(SingletonComponent::class)
-object DataStoreModule {
-    @Provides @Singleton
-    fun provideSettings(@ApplicationContext ctx: Context): DataStore<Preferences> = ctx.settingsDataStore
-}
-```
+**If you would write more than ~10 keys in a Preferences store, switch to Proto.** That's the threshold where the implicit cost of mistyping a key name dominates the implicit cost of writing a serializer.
 
-For Proto:
+For Proto, use `kotlinx.serialization` rather than protobuf when the project already pulls in `kotlinx-serialization-json` (every scaffolded project does). The `Serializer<T>` must:
+- Provide a `defaultValue` for first-run reads.
+- Throw `CorruptionException` (not the underlying `SerializationException`) on bad input — DataStore relies on this to trigger its corruption handler.
 
-```kotlin
-private val Context.userStateStore: DataStore<UserState> by dataStore(
-    fileName = "user_state.pb",
-    serializer = UserStateSerializer,
-)
+## Repository wrapping (project mandate)
 
-object UserStateSerializer : Serializer<UserState> {
-    override val defaultValue: UserState = UserState.DEFAULT
-    override suspend fun readFrom(input: InputStream): UserState =
-        try { Json.decodeFromStream(input) } catch (e: SerializationException) { throw CorruptionException("bad", e) }
-    override suspend fun writeTo(t: UserState, output: OutputStream) =
-        withContext(Dispatchers.IO) { Json.encodeToStream(t, output) }
-}
-```
+**Presentation never touches `DataStore` directly.** Every setting goes through a feature- or domain-level repository that exposes typed `Flow<T>` reads and `suspend fun` writes.
 
-## Repository wrapping
-
-Presentation never touches `DataStore` directly. Wrap it in a settings repository:
+The non-obvious rule on the read path:
 
 ```kotlin
-interface SettingsRepository {
-    val theme: Flow<AppTheme>
-    suspend fun setTheme(theme: AppTheme)
-}
-
-class SettingsRepositoryImpl @Inject constructor(
-    private val store: DataStore<Preferences>,
-) : SettingsRepository {
-    private object Keys { val THEME = stringPreferencesKey("theme") }
-
-    override val theme: Flow<AppTheme> = store.data
-        .catch { e -> if (e is IOException) emit(emptyPreferences()) else throw e }
-        .map { prefs -> AppTheme.valueOf(prefs[Keys.THEME] ?: AppTheme.SYSTEM.name) }
-        .distinctUntilChanged()
-
-    override suspend fun setTheme(theme: AppTheme) {
-        store.edit { it[Keys.THEME] = theme.name }
-    }
-}
+override val theme: Flow<AppTheme> = store.data
+    .catch { e -> if (e is IOException) emit(emptyPreferences()) else throw e }
+    .map { /* … */ }
+    .distinctUntilChanged()
 ```
 
-Always `catch { ... emit(emptyPreferences()) ... }` on the read path — `IOException` is an expected failure mode for first-run or corrupted stores, and swallowing it leaves the user with a spinning Flow.
+**Always `catch { IOException → emit(emptyPreferences()) }`** on the read path. `IOException` is an expected failure mode for first-run reads or a corrupted store; swallowing it propagates the failure into the flow and leaves the UI on a spinning Loading state forever. The reviewer flags any `DataStore.data` consumer in a repository that doesn't carry this guard.
 
 ## Keys
 
-- Name keys `UPPER_SNAKE_CASE` and group in a private `object Keys`.
-- Key strings in `snake_case` matching the property name.
-- Never leak raw keys through the repository surface. The repository is the type boundary.
+- Group in a private `object Keys` inside the repository.
+- Key string in `snake_case` matching the Kotlin property name.
+- **Never leak raw keys** (or `DataStore<Preferences>` itself) through the repository surface. The repository is the type boundary.
 
-## Migrating from SharedPreferences
+## SharedPreferences migration
 
-`SharedPreferencesMigration` does the one-shot copy:
+`SharedPreferencesMigration` does the one-shot copy. Project policy: **ship the migration for exactly one release, then remove it** (and delete the legacy `SharedPreferences` XML) in the next release. Keeping the migration around indefinitely means every cold start re-runs the read on a file you've deleted in 99% of installs.
 
-```kotlin
-val Context.settingsDataStore by preferencesDataStore(
-    name = "settings",
-    produceMigrations = { ctx ->
-        listOf(SharedPreferencesMigration(ctx, "legacy_prefs"))
-    },
-)
-```
+## Multi-process — read this before it bites
 
-Ship it for one release, then remove the migration (and the legacy `SharedPreferences` file) in the next.
+**DataStore is not multi-process safe.** If you have a widget, a `:remote` process, or a background service in a separate process:
 
-## Multi-process
+- Funnel all reads/writes through a single process (bind to it via a `ContentProvider` facade), **or**
+- Use `androidx.datastore:datastore-core-multiprocess` (available since 1.1).
 
-**DataStore is not multi-process safe.** If you have a widget, a `:remote` process, or a background service in a separate process, either:
-- Funnel all reads/writes through a single process (bind to it via a `ContentProvider` facade), or
-- Use `MultiProcessDataStore` (the preferences variant has been available since `androidx.datastore:datastore-core-multiprocess` 1.1).
+If you go multi-process, pin the artifact to the existing `datastore` version ref in `libs.versions.toml`:
 
-If you choose the multi-process route, add the artifact to the catalog under the existing `datastore` version ref so it stays in lockstep with `datastore-preferences`:
 ```toml
-# gradle/libs.versions.toml
 datastore-multiprocess = { module = "androidx.datastore:datastore-core-multiprocess", version.ref = "datastore" }
 ```
-Don't pin a separate version — drift between the single-process and multi-process variants causes hard-to-debug serializer mismatches.
 
-Don't open the same file from two processes with the single-process API — it corrupts silently.
+**Don't pin a separate version** — drift between single-process and multi-process variants causes silent serializer mismatches that look like data corruption.
 
-## Testing
-
-Use `PreferenceDataStoreFactory.create` with a temp directory in tests:
-
-```kotlin
-@Test fun setTheme_updates_flow() = runTest {
-    val tmp = TemporaryFolder().apply { create() }
-    val store = PreferenceDataStoreFactory.create(scope = backgroundScope) {
-        tmp.newFile("settings.preferences_pb")
-    }
-    val repo = SettingsRepositoryImpl(store)
-    repo.setTheme(AppTheme.DARK)
-    assertEquals(AppTheme.DARK, repo.theme.first())
-}
-```
+Opening the same file from two processes with the **single-process** API corrupts silently. The reviewer flags any `preferencesDataStore by` delegate combined with manifest `<service android:process=":...">` or `<provider android:process=":...">`.
 
 ## Hard nos
 
-- No `runBlocking { store.data.first() }` on the main thread.
-- No writes from a `@Composable` — go through the repository + ViewModel.
-- No exposing `DataStore<Preferences>` to UI layers.
-- No storing secrets. Use `EncryptedSharedPreferences` or Keystore.
+- **No `runBlocking { store.data.first() }`** on the main thread.
+- **No writes from a `@Composable`** — go through the repository + ViewModel.
+- **No exposing `DataStore<Preferences>` to UI layers.** Repository surface only.
+- **No storing secrets here.** Use **Tink (Keystore-backed)** — see `android-security` → "Secrets at rest". `EncryptedSharedPreferences` is deprecated (`androidx.security:security-crypto` was withdrawn); don't add it to new code. This alignment is enforced in `android-security` and `android-security-reviewer` — they recommend the same.
+- **No raw key strings** in a repository's public API.

@@ -23,7 +23,7 @@ Confirm the plan in one short paragraph. Proceed only after confirmation.
 
 ## Phase 1 — Load the blueprint
 
-Read `.claude/skills/kmm-app-skeleton/SKILL.md` in full. Source of truth for every file.
+Read `${CLAUDE_PLUGIN_ROOT}/skills/kmm-app-skeleton/SKILL.md` in full. Source of truth for every file.
 
 Placeholders: `{{APP_NAME}}`, `{{PACKAGE_ID}}`, `{{PACKAGE_PATH}}`, `{{APP_DISPLAY_NAME}}`, `{{IOS_MIN}}`.
 

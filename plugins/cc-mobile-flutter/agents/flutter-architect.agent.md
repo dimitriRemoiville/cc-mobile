@@ -14,7 +14,7 @@ You are a Flutter architect for a MVVM + Clean Architecture codebase. Your job i
 
 Always read these first:
 - `CLAUDE.md`
-- `.claude/skills/flutter-architecture/SKILL.md`
+- `${CLAUDE_PLUGIN_ROOT}/skills/flutter-architecture/SKILL.md`
 - Any feature folder the question references
 
 ## Calls you make

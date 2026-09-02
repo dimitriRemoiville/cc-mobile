@@ -21,7 +21,7 @@ Exactly one of:
 
 ## Procedure
 
-1. **Load context.** Read `.claude/skills/flutter-testing/SKILL.md` and `.claude/skills/dart-style/SKILL.md`.
+1. **Load context.** Read `${CLAUDE_PLUGIN_ROOT}/skills/flutter-testing/SKILL.md` and `${CLAUDE_PLUGIN_ROOT}/skills/dart-style/SKILL.md`.
 
 2. **Discover targets.**
    - `--feature`: glob `lib/features/<feature>/**/*.dart`. Filter to testable types (see classification below).

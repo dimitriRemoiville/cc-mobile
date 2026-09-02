@@ -23,7 +23,7 @@ Confirm the plan in one short paragraph. Proceed only after confirmation.
 
 ## Phase 1 — Load the blueprint
 
-Read `.claude/skills/ios-app-skeleton/SKILL.md` in full. Source of truth for every file, every placeholder, every flag.
+Read `.claude/skills/ios-app-skeleton/SKILL.md` in full. It is the procedure spine — placeholders, feature flags, target layout, execution order, hard rules, and post-scaffold checklist. The file templates live in sibling files under `references/` (e.g. `references/root-files.md`, `references/app-core.md`, `references/app-target.md`); each execution-order step in the spine names the reference it needs. Load each reference at its step rather than reading them all up front.
 
 Placeholders used: `{{APP_NAME}}`, `{{BUNDLE_ID}}`, `{{APP_DISPLAY_NAME}}`, `{{ORG_NAME}}`.
 
@@ -45,7 +45,7 @@ iOS scaffolding's "version surface" splits in three: (a) the Swift/Xcode toolcha
 
 If Swift < 6 or Xcode < 16, stop and ask the user to upgrade — do not lower the floor or change the skeleton's idioms. Do not auto-suggest `xcode-select` switches — the user might have a beta intentionally selected.
 
-**2. Deployment-target sanity.** If Phase 0 Q3 picked iOS < 18, surface that the skeleton uses iOS 18 features (`@Observable`, NavigationStack typed destinations, NavigationPath value-type push) and either (a) stop and ask the user to confirm a downgrade with eyes open, or (b) proceed and substitute the iOS 17-compatible variants from the skill's "Compatibility traps" callout. Default behaviour: stop.
+**2. Deployment-target sanity.** If Phase 0 Q3 picked iOS < 18, surface that the skeleton uses iOS 18 features (`@Observable`, NavigationStack typed destinations, NavigationPath value-type push) and either (a) stop and ask the user to confirm a downgrade with eyes open, or (b) proceed and substitute the iOS 17-compatible variants documented in `.claude/skills/ios-app-skeleton/references/app-features.md`. Anything below iOS 17 is a different skeleton — stop rather than improvise. Default behaviour: stop.
 
 **3. Third-party SPM packages (only when flags require them).** SPM's manifest cares about real released tags. For each package the scaffold adds, resolve the latest stable tag via GitHub's Releases API and pin it with the `from:` form (`.package(url: "...", from: "<tag>")`).
 

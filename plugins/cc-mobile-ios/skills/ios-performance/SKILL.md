@@ -1,120 +1,102 @@
 ---
 name: ios-performance
-description: iOS performance patterns — Instruments tracing, SwiftUI `Self._printChanges()`, MetricKit, launch optimization, scroll smoothness, memory pressure, Signposts. Load when investigating jank, cold-start regressions, or shipping a release build.
+description: iOS performance discipline for this project — measure-before-optimize, launch-time budget, SwiftUI body-invalidation debugging, scroll smoothness, Signposts and MetricKit wiring, and the Instruments pass for a regression. Load when investigating jank, cold-start regressions, hangs, or memory growth.
 ---
 
 # iOS performance
 
+## When this applies
+
+Largely stack-agnostic. Instruments, Signposts, MetricKit, and the launch-time rules work for any iOS app regardless of architecture. The SwiftUI subsections (body invalidation, `Self._printChanges()`, `@Observable` tracking) apply only where SwiftUI is in use — for UIKit screens, apply the same measurement discipline with the View-system tools (`CADisplayLink` frame timing, `Hangs` and `Time Profiler` instruments).
+
 ## Measure first
 
-Any performance claim needs an Instruments trace, a MetricKit report, or a Signpost-annotated profile. No opinions in PR descriptions.
+**A performance claim without a trace is an opinion.** Every optimization in this repo carries a before/after number from Instruments, a MetricKit payload, or a Signpost interval.
+
+Record on a **release build**. Debug builds carry unoptimized Swift, dylib validation, and no cross-module optimization — a Debug profile tells you almost nothing about what ships.
 
 ## Launch time
 
-- `AppLauncher` + `didFinishLaunchingWithOptions` executes on the main thread. Every synchronous thing here delays the first frame.
-- Move Firebase init, analytics setup, log-shipping to a `Task.detached(priority: .utility) { ... }` or wait for first scene if possible.
-- Use the **Time Profiler** and **App Launch** templates in Instruments.
-- Measure `TTFF` (time to first frame) and `TTI` (time to interactive). The latter is the metric that actually matters.
+Everything synchronous in app init and `didFinishLaunching` delays the first frame.
 
-Pre-main contributions (dylib loading, objc init) show up in the App Launch template under "dylib loading" — cutting heavy Swift Package deps from the main target trims this.
+- Move analytics, logging, Firebase, and remote-config initialisation off the critical path — after the first scene, or into a low-priority task.
+- Measure **TTI** (time to interactive), not just TTFF (time to first frame). TTFF hides a spinner-only first screen.
+- Pre-main cost (dylib loading, ObjC `+load`) shows in the **App Launch** template. It is dominated by dynamically linked dependencies: prefer static linking for SPM packages in the main target, and cut dependencies the app doesn't use at launch.
 
-## SwiftUI recomposition
+## SwiftUI body invalidation
 
-### Print changes (iOS 17+)
+`@Observable` tracks per-property access, so a view that reads `model.title` re-evaluates only when `title` changes. That's the mechanism most "SwiftUI is slow" reports are actually missing.
+
+When a body evaluates more than expected:
 
 ```swift
-struct OrderRow: View {
-    let order: Order
-
-    var body: some View {
-        let _ = Self._printChanges()
-        // ...
-    }
+var body: some View {
+    let _ = Self._printChanges()   // remove before shipping
+    // ...
 }
 ```
 
-Log goes to the console when the body re-evaluates. Quietly remove before shipping.
+Then fix the cause, in this order:
 
-### Reduce body re-evaluation
-
-- Hold as little state as possible in a view. Pass sliced view models, not the whole store.
-- `@Observable` macro automatically tracks per-property access — a view that reads `vm.title` only invalidates on `title` changes.
-- For derived values, compute in the view model, not in body.
-- `LazyVStack` / `List` for >50 rows; never `ForEach` inside a `ScrollView` for large sets.
-
-```swift
-List(orders) { order in OrderRow(order: order) }
-    .listStyle(.plain)
-```
-
-Identifiable conformance is required. Use a stable `id`, not `\.self` on a value with equality quirks.
+1. **The view holds too much.** Pass the slice a subview needs, not the whole model.
+2. **Derived values computed in `body`.** Compute them in the view model.
+3. **A closure or non-`Equatable` value recreated per render**, defeating structural identity.
 
 ## Scroll smoothness
 
-- Every cell's `body` should be cheap. Expensive work -> pre-computed in view model.
-- Use `AsyncImage` with a `contentMode:` and explicit size. Prefer `.task {}` + a typed image pipeline if you need caching / transformations.
-- Avoid `GeometryReader` in cells — it invalidates on every frame and tanks scroll.
-- `.drawingGroup()` for complex paths/effects that otherwise recompose every frame.
+- **`List` or `LazyVStack` past ~50 rows.** `ForEach` inside a plain `ScrollView` builds every row.
+- **A cell's `body` must be cheap.** Formatting, date math, and string building belong in the view model, precomputed.
+- **No `GeometryReader` inside a cell.** It invalidates per frame and reliably tanks scroll.
+- Stable identity matters: a real `id`, never `\.self` on a value whose equality is expensive or surprising.
+- `.drawingGroup()` for complex paths and effects that otherwise re-render every frame — measure, it isn't free.
 
 ## Memory
 
-- Images: `UIImage(contentsOfFile:)` loads lazily; `UIImage(named:)` keeps in the named cache. Explicitly release or reuse.
-- `Data` arrays over 1MB should go through streams.
-- Use Xcode's **Allocations** instrument to catch retain cycles. Combine publishers held on `self` without a `.sink(...)` stored in `cancellables` leak quietly.
-- `weak` captures in closures crossing async boundaries: prefer structured tasks (`.task { ... }`) so the lifecycle is tied to the view.
+- Images dominate. `UIImage(named:)` populates a system cache that isn't yours to evict; `UIImage(contentsOfFile:)` doesn't. Downsample before display — a 4000px image in a 200pt view costs the full decoded bitmap.
+- Data over ~1MB goes through a stream, not a `Data` in memory.
+- **Allocations** for steady-state growth, **Leaks** for cycles. A Combine subscription stored on `self` without a matching teardown leaks quietly and never shows as a crash.
+- Prefer `.task { }` over a stored `Task` so lifetime is tied to the view rather than to a `[weak self]` dance.
 
-## Signposts (custom instrument ranges)
+## Signposts
+
+Custom intervals show up in Instruments' **Points of Interest** lane and are the cheapest way to time your own code in a real trace:
 
 ```swift
-import OSLog
-
-private let logger = Logger(subsystem: "com.example.app", category: "orders")
 private let signposter = OSSignposter(subsystem: "com.example.app", category: "orders")
 
-func loadOrders() async throws {
+func loadOrders() async {
     let state = signposter.beginInterval("load-orders")
     defer { signposter.endInterval("load-orders", state) }
     // work...
 }
 ```
 
-Show up in Instruments' **Points of Interest** lane. Use short, stable names — they become column headers.
+Names become column headers — keep them short and stable across builds so traces stay comparable.
 
 ## MetricKit
 
-For production insights:
+Production telemetry: launch times, hang rate, CPU and energy, plus diagnostic payloads for crashes and hangs, delivered daily per device.
 
 ```swift
-final class MetricSubscriber: NSObject, MXMetricManagerSubscriber {
-    func didReceive(_ payloads: [MXMetricPayload]) { /* upload */ }
-    func didReceive(_ payloads: [MXDiagnosticPayload]) { /* upload */ }
-}
-// In App init:
-MXMetricManager.shared.add(MetricSubscriber())
+MXMetricManager.shared.add(subscriber)
 ```
 
-Payloads arrive daily per device with launch times, hang rates, CPU/energy breakdowns. Ship to your analytics pipe.
+This is the only source of truth for how the app behaves on the devices people actually own. Ship the payloads to your analytics pipeline; a subscriber that logs and discards is wasted wiring.
 
-## Main thread hygiene
+## The regression pass
 
-- Don't hold locks across `await`.
-- Don't call `URLSession.shared.data(for:)` on the main actor if you can push it to an actor repo.
-- Never call `DispatchSemaphore.wait()` from the main thread.
+In order, on a release build:
 
-## Instruments checklist for a regression
-
-1. **Time Profiler** — who's eating CPU.
-2. **Allocations** — any runaway growth, any unexpectedly large heap at steady state.
-3. **Leaks** — retain cycles.
-4. **Hangs** — where the main thread blocked for >250ms.
-5. **SwiftUI** — body counts, rendering frame hitches.
-
-Record on a release build. Debug builds include non-optimized Swift and dylib validation overhead.
+1. **Hangs** — where did the main thread block for >250ms.
+2. **Time Profiler** — what's eating CPU.
+3. **Allocations** — unexpected growth or a large steady-state heap.
+4. **Leaks** — retain cycles.
+5. **SwiftUI** — body counts and rendering hitches.
 
 ## Hard nos
 
-- No optimization without a before/after measurement.
-- No `@State` for values that live outside the view.
-- No `onAppear { Task { ... } }` where `.task { ... }` is the right tool.
-- No heavy logging in release (`print(...)` included).
-- No profiling in debug and claiming a result.
+- **No optimization without a before/after measurement.**
+- **No profiling a Debug build** and reporting the number.
+- **No `@State` for values that outlive the view.**
+- **No `onAppear { Task { } }`** where `.task { }` is the right tool — it leaks the task past view lifetime.
+- **No heavy logging in release**, `print()` included.

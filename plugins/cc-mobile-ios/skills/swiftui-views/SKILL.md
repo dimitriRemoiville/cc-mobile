@@ -1,17 +1,24 @@
 ---
 name: swiftui-views
-description: Authoritative playbook for building SwiftUI views and view models in this project. Use whenever writing or editing any `View`, navigation destination, preview, or `@Observable` view model. Covers state ownership, the container / presentational split, navigation, accessibility, and previews.
+description: Project-specific SwiftUI conventions — the RootView/View split, the `ViewState` shape, the `@Observable @MainActor` view-model contract, and the hard nos this project enforces. Load whenever writing or editing any `View` or view model in this codebase. Navigation destinations and route plumbing live in `navigation-stack` — load that one for any nav-graph or deep-link work.
 ---
 
-# SwiftUI views skill
+# SwiftUI views (project delta)
 
-This skill governs every SwiftUI change in the project.
+For SwiftUI fundamentals — property wrappers, layout, `ViewBuilder`, `#Preview` mechanics, list performance, animation — read [Apple's SwiftUI documentation](https://developer.apple.com/documentation/swiftui) and the [Observation framework guide](https://developer.apple.com/documentation/observation). This file documents only where this project's conventions add to or override those defaults.
 
-## Container / presentational split
+## When this applies
 
-A screen is split into two views:
-- A **Root** view that owns the `@Observable` view model and knows about the world (routing, environment, etc.).
-- A **stateless presentation** view that takes values + closures only.
+SwiftUI with the Observation framework (iOS 17+). On an existing app:
+
+- **UIKit** (`UIViewController`, `.storyboard`, `.xib`, `UITableViewDataSource`) → don't push SwiftUI patterns. The RootView split, `@Observable`, and `#Preview` rules are SwiftUI-only.
+- **Mixed UIKit + SwiftUI** (`UIHostingController`, `UIViewRepresentable`) → apply this skill to the SwiftUI half; let the UIKit half follow its own conventions.
+- **`ObservableObject` + `@Published` codebase** (pre-Observation, or an iOS 16 deployment floor) → the "no `ObservableObject`" rule is for *new* code in an `@Observable` codebase. Don't propose a migration as a side effect of an unrelated change.
+- **TCA** (`@Reducer`, `Store`, `WithViewStore`) → skip this skill entirely; TCA owns the view/state contract.
+
+## RootView + View split (project rule)
+
+Every screen is **two views**: a stateful `<Feature>RootView` that owns the `@Observable` view model and knows about the world, and a stateless `<Feature>View` that takes values plus closures.
 
 ```swift
 // ProfileRootView.swift — stateful container
@@ -19,11 +26,7 @@ struct ProfileRootView: View {
     @State private var model: ProfileViewModel
     let onSelectPost: (PostID) -> Void
 
-    init(
-        userID: UserID,
-        container: DIContainer,
-        onSelectPost: @escaping (PostID) -> Void
-    ) {
+    init(userID: UserID, container: CompositionRoot, onSelectPost: @escaping (PostID) -> Void) {
         _model = State(initialValue: container.makeProfileViewModel(userID: userID))
         self.onSelectPost = onSelectPost
     }
@@ -38,46 +41,33 @@ struct ProfileRootView: View {
     }
 }
 
-// ProfileView.swift — pure UI, fully previewable
+// ProfileView.swift — pure UI, fully previewable, no container reference
 struct ProfileView: View {
     let state: ProfileViewState
     let onRefresh: () -> Void
     let onSelectPost: (PostID) -> Void
 
-    var body: some View {
-        switch state {
-        case .loading:
-            ProgressView().accessibilityLabel("Loading profile")
-        case .error(let message):
-            ErrorState(message: message, onRetry: onRefresh)
-        case .loaded(let profile):
-            ProfileContent(profile: profile, onSelectPost: onSelectPost)
-        }
-    }
-}
-
-#Preview("Loaded") {
-    ProfileView(state: .loaded(.sample), onRefresh: {}, onSelectPost: { _ in })
-}
-
-#Preview("Error") {
-    ProfileView(state: .error("Couldn't load"), onRefresh: {}, onSelectPost: { _ in })
+    var body: some View { /* switch over state */ }
 }
 ```
 
-## ViewState
+The stateless half is what `#Preview` and UI tests drive — no composition root, no network, no `@Observable` setup. The Root's job is wiring; the View's job is rendering.
 
-Enum when states are distinct:
+**Never pass the view model itself into the presentation view.** Pass `model.state` and closures. A `View` that reads `model.something` in its body has erased the split.
+
+## ViewState shape
+
+An **enum** when the screen has distinct states — the default:
 
 ```swift
 enum ProfileViewState: Equatable {
     case loading
     case loaded(Profile)
-    case error(String)
+    case error(DomainError)
 }
 ```
 
-Struct when the screen is always-populated and you need fields:
+A **struct** when the screen is always populated and you need independent fields (forms, composers):
 
 ```swift
 struct ComposeViewState: Equatable {
@@ -87,103 +77,51 @@ struct ComposeViewState: Equatable {
 }
 ```
 
-Never use the `@Observable` model itself as a view's "state" — always pass `model.state` to the presentation view.
+One-off effects — navigation, toasts, haptics — are **not** state. Surface them as a `ViewEvent` the Root consumes once, or as a closure the Root supplies.
 
-## ViewModel
+## View model contract
 
 ```swift
-@Observable
-@MainActor
+@Observable @MainActor
 final class ProfileViewModel {
     private(set) var state: ProfileViewState = .loading
-
     private let getProfile: GetProfileUseCase
 
-    init(getProfile: GetProfileUseCase) {
-        self.getProfile = getProfile
-    }
+    init(getProfile: GetProfileUseCase) { self.getProfile = getProfile }
 
     func load() async { /* ... */ }
     func refresh() async { await load() }
 }
 ```
 
-- `@Observable` + `@MainActor` + `final class`.
-- `private(set)` on all mutable state.
-- Constructor injection; collaborators are protocols.
-- Methods are `async`; views wrap them in `Task { }` or `.task { }`.
+Non-negotiable in this codebase:
 
-## Navigation
-
-Typed routes, value-based `NavigationStack`:
-
-```swift
-enum AppRoute: Hashable {
-    case profile(UserID)
-    case post(PostID)
-    case settings
-}
-
-struct AppRootView: View {
-    @State private var path: [AppRoute] = []
-
-    var body: some View {
-        NavigationStack(path: $path) {
-            HomeRootView(onSelect: { path.append($0) })
-                .navigationDestination(for: AppRoute.self) { route in
-                    switch route {
-                    case .profile(let id): ProfileRootView(userID: id, container: .live, onSelectPost: { path.append(.post($0)) })
-                    case .post(let id): PostRootView(postID: id, container: .live)
-                    case .settings: SettingsRootView()
-                    }
-                }
-        }
-    }
-}
-```
-
-Rules:
-- Destinations are values (`Hashable`), not `AnyView` factories.
-- The root composes the nav graph. Individual screens don't know the whole graph — they receive callbacks for what they can navigate to.
-- Deep links map to the same `AppRoute` type.
+- `@Observable` + `@MainActor` + `final class`. All three.
+- `private(set)` on every mutable property — the view reads, the model writes.
+- Constructor injection, collaborators typed as protocols. Never the whole `CompositionRoot` (see `ios-di`).
+- User actions are **discrete `async` methods** (`load()`, `refresh()`, `submit()`), and the View takes one closure per action. Escalate to a single `send(_ action:)` only when a screen has ≥5 distinct interactions — that's an MVI shape, and this project is MVVM by default.
 
 ## Previews
 
-Every non-trivial view has multiple previews covering distinct states. Wrap previews in any environment the view needs:
+Every non-trivial view has previews for its **distinct states**, not just the happy one — the loading and error branches are the ones that rot:
 
 ```swift
-#Preview("Light") {
-    ProfileView(state: .loaded(.sample), onRefresh: {}, onSelectPost: { _ in })
-}
-
-#Preview("Dark") {
-    ProfileView(state: .loaded(.sample), onRefresh: {}, onSelectPost: { _ in })
-        .preferredColorScheme(.dark)
-}
+#Preview("Loaded") { ProfileView(state: .loaded(.sample), onRefresh: {}, onSelectPost: { _ in }) }
+#Preview("Error")  { ProfileView(state: .error(.notFound), onRefresh: {}, onSelectPost: { _ in }) }
 ```
 
-`#Preview` blocks can return any `View`. Use sample data — never live network / SwiftData in previews.
+Sample data only. A `#Preview` that needs real IO is a broken preview.
 
 ## Accessibility
 
-- `accessibilityLabel`, `accessibilityHint`, and `accessibilityValue` are the three knobs.
-- Decorative images: `.accessibilityHidden(true)`.
-- Group related controls with `.accessibilityElement(children: .combine)`.
-- Test with VoiceOver once on every new screen.
-- Support Dynamic Type — use `.font(.body)` / `.font(.headline)`, not fixed `.font(.system(size: 14))`.
-
-## Performance
-
-- Extract subviews. Apple's diffing engine benefits from small, stable view types.
-- For lists: `List` or `LazyVStack` with identifiable data. Provide `id:` explicitly when the type isn't `Identifiable`.
-- Use `@ViewBuilder` helpers for conditional subviews.
-- `.task(id:)` cancels the previous task when `id` changes — use for per-item loading.
-- Avoid `AnyView`; it erases type info and hurts diffing.
+The full checklist lives in `ios-accessibility`. The minimum the reviewer flags here: every non-decorative `Image` / custom control has an `accessibilityLabel`, decorative ones are `.accessibilityHidden(true)`, tap targets are ≥ 44×44pt, and text uses semantic styles (`.body`, `.headline`) rather than fixed sizes.
 
 ## Hard nos
 
-- No `@Published` / `ObservableObject` in new code.
-- No `DispatchQueue.main.async`; use `Task { @MainActor in … }` or mark the type `@MainActor`.
-- No network / database calls inside a view's `body` or `onAppear`.
-- No `#Preview` that requires real IO.
-- No view whose `body` is longer than ~40 lines — extract.
+- **No `ObservableObject` / `@Published` / `@StateObject`** in new code — `@Observable` + `@State`.
+- **No `DispatchQueue.main.async`** — isolate the function `@MainActor`.
+- **No network or database call in a `body` or in `onAppear`.** `.task { }` calling a view-model method, always.
+- **No view model constructed inside a stateless view.** Only a `RootView` builds one, and only from the composition root.
+- **No `#Preview` that requires real IO.**
+- **No `AnyView`** without a written reason — it erases the type information the diffing engine needs.
+- **No `body` longer than ~40 lines.** Extract a subview when concerns mix or nesting passes three levels; readability is the rule, the line count is the smell.

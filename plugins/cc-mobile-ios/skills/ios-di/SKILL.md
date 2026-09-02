@@ -1,45 +1,40 @@
 ---
 name: ios-di
-description: Dependency injection patterns used in this project — composition root + constructor injection, protocol-oriented design, testable factories, and how DI fits with SwiftUI / @Observable. Load when adding a new type that needs dependencies, wiring a repository, setting up previews, writing tests, or debugging a DI-related crash.
+description: Project-specific dependency-injection rules — the `CompositionRoot` in the `App` target, constructor injection through protocols, factory methods for view models, the preview/test container, and when a DI library is actually warranted. Load when adding a type that needs dependencies, wiring a repository, setting up previews, or debugging a DI-related crash.
 ---
 
-# Dependency injection (iOS)
+# Dependency injection (project delta)
 
-## The approach
+There is no DI framework here to learn — the pattern is plain Swift initializers. This file documents the rules that make that scale, and the places people reach for a shortcut that breaks testability.
 
-**Composition root + constructor injection via protocols.** No DI container library by default. If we outgrow this, `swift-dependencies` or `Factory` are the two options we'd consider — but start simple.
+## When this applies
 
-Why:
-- Explicit dependencies — a type's initializer lists everything it needs.
-- Testability — pass fakes to the initializer; no global state to stub.
-- No magic — works with Swift 6 strict concurrency, no runtime reflection.
-- SwiftUI-friendly — `@Observable` view models are constructed by the root view that hosts them.
+**Composition root + constructor injection, no container library.** On an existing app:
 
-## The shape
+- **`swift-dependencies`** (`@Dependency(\.apiClient)`, `DependencyValues`) → keep it. It solves the same problem with per-test overrides; don't unwind it. The "no service locator, no singletons" spirit still applies.
+- **Factory / Resolver / Swinject** (`Container.shared.resolve(...)`) → keep it, but the service-locator failure mode is real: flag types that resolve dependencies *inside themselves* rather than receiving them.
+- **TCA** → it already uses `swift-dependencies`; skip this skill.
+- **Singletons throughout** (`APIClient.shared`, `UserManager.shared`) → say plainly that it blocks testing, but don't refactor the app's wiring as a side effect of an unrelated change.
+
+## The composition root
+
+One type, built once at launch, living in the `App` target — the only place that knows concrete implementations exist:
 
 ```swift
-// A DIContainer assembled at app startup. Single source of truth for "how live objects are built."
-struct DIContainer {
+struct CompositionRoot {
     let apiClient: APIClient
     let orderRepository: OrderRepository
 
-    static let live: DIContainer = {
-        let api = LiveAPIClient(baseURL: Env.apiBaseURL)
-        return DIContainer(
+    static let live: CompositionRoot = {
+        let api = URLSessionAPIClient(baseURL: Env.apiBaseURL, keychain: KeychainStoreLive())
+        return CompositionRoot(
             apiClient: api,
             orderRepository: LiveOrderRepository(client: api)
         )
     }()
 }
 
-// Factory methods on the container construct things that need more context.
-extension DIContainer {
-    func makeOrderListViewModel() -> OrderListViewModel {
-        OrderListViewModel(
-            getOrders: GetOrdersUseCase(orders: orderRepository)
-        )
-    }
-
+extension CompositionRoot {
     func makeOrderDetailViewModel(id: OrderID) -> OrderDetailViewModel {
         OrderDetailViewModel(
             id: id,
@@ -50,112 +45,51 @@ extension DIContainer {
 }
 ```
 
-The root view receives the container — either as an environment value or a plain property:
+The scaffolded template is in `${CLAUDE_PLUGIN_ROOT}/skills/ios-app-skeleton/references/app-target.md`.
 
-```swift
-@main
-struct MyApp: App {
-    let container: DIContainer = .live
+## The four rules
 
-    var body: some Scene {
-        WindowGroup {
-            AppRootView(container: container)
-                .environment(\.diContainer, container)  // optional, for deeper views
-        }
-    }
-}
+1. **`CompositionRoot.live` is the only shared instance in the app.** No other `static let shared`. If you're tempted, you want a factory method on the root instead.
+2. **Never pass the root into a view model.** That's a service locator wearing a struct's clothes: the view model's initializer stops declaring what it needs, and tests have to build the whole graph. Give it the specific use cases.
+3. **Initializer injection only.** No optional-var-then-assign wiring, no setter injection. If a type can exist in a half-configured state, it will.
+4. **Parameters are protocols**, unless the concrete type is already a framework-free `AppCore` value type.
 
-private struct DIContainerKey: EnvironmentKey {
-    static let defaultValue: DIContainer = .live
-}
-
-extension EnvironmentValues {
-    var diContainer: DIContainer {
-        get { self[DIContainerKey.self] }
-        set { self[DIContainerKey.self] = newValue }
-    }
-}
-```
-
-## Protocols for testability
-
-Every collaborator used by a use case or view model is a **protocol**. Implementations live in `Data/` (`Live…`) or in tests (`Mock…` / `Stub…`).
-
-```swift
-protocol OrderRepository: Sendable {
-    func get(id: OrderID) async throws -> Order
-}
-
-// Data/
-final class LiveOrderRepository: OrderRepository { /* ... */ }
-
-// Tests/
-final class StubOrderRepository: OrderRepository {
-    let result: Result<Order, Error>
-    func get(id: OrderID) async throws -> Order { try result.get() }
-}
-```
-
-## Rules
-
-- **No singletons.** `DIContainer.live` is the only top-level shared instance. Don't add `static let shared` elsewhere.
-- **No service locator.** Don't pass the whole container into a view model; give it just the use cases it needs.
-- **Initializer injection.** Every view model / use case / repository has an initializer that takes all its dependencies. No `lateinit`-style setters.
-- **Constructor parameters are protocols**, not concrete types — unless the concrete type is already in the `Domain` layer (a plain struct).
-
-## View models and views
-
-A stateful `…RootView` creates its view model from the container:
+Only a `RootView` constructs a view model, and only from the root:
 
 ```swift
 struct OrderListRootView: View {
     @State private var model: OrderListViewModel
-
-    init(container: DIContainer) {
+    init(container: CompositionRoot) {
         _model = State(initialValue: container.makeOrderListViewModel())
     }
-
-    var body: some View { /* ... */ }
 }
 ```
 
-Don't construct view models inside a stateless child view.
+## Previews and tests
 
-## For previews and tests
-
-Previews should use an in-memory container or direct stubs:
+A `preview` variant of the root keeps `#Preview` blocks one line long and IO-free:
 
 ```swift
-extension DIContainer {
+extension CompositionRoot {
     static func preview(
         orders: OrderRepository = StubOrderRepository(result: .success(.sample))
-    ) -> DIContainer {
-        DIContainer(
-            apiClient: StubAPIClient(),
-            orderRepository: orders
-        )
+    ) -> CompositionRoot {
+        CompositionRoot(apiClient: StubAPIClient(), orderRepository: orders)
     }
 }
 
-#Preview {
-    OrderListRootView(container: .preview())
-}
+#Preview { OrderListRootView(container: .preview()) }
 ```
 
-For unit tests, build the view model directly with stubs — you usually don't need the full container.
+For unit tests, skip the container entirely — construct the view model with stubs directly. If a test needs the whole graph, the type under test has too many dependencies.
 
-## When to graduate to a DI library
+## When a DI library is warranted
 
-Consider `swift-dependencies` or `Factory` when:
-- You have > ~30 distinct dependencies and the container is hard to read.
-- You want per-test overrides without passing a container around.
-- You're already using TCA (which uses `swift-dependencies` natively).
-
-Don't introduce one just because the app is growing — the plain pattern scales further than people expect.
+Consider `swift-dependencies` or `Factory` when the container has grown past ~30 distinct dependencies and is genuinely hard to read, when you want per-test overrides without threading a container through every initializer, or when you're adopting TCA anyway. **Not** merely because the app is growing — the plain pattern scales considerably further than people expect, and it costs nothing at build time.
 
 ## Common pitfalls
 
-- **Creating a view model in a stateless view.** The view should receive the model or values from its container.
-- **Passing `DIContainer` to a view model.** The view model should only see the use cases it uses.
-- **Global `EnvironmentValues` as hidden DI.** Environment is for UI concerns (theme, locale). Don't stash business services there.
-- **Forgetting `@MainActor` on a view model.** Leads to data races under Swift 6 strict concurrency.
+- **Constructing a view model in a stateless view** — it should receive state and closures. See `swiftui-views`.
+- **Stashing services in `EnvironmentValues`** — Environment is for UI concerns (theme, locale, size class). Business services there are hidden global state with extra steps.
+- **Forgetting `@MainActor` on a view model** — under Swift 6 strict concurrency this surfaces as a data race, usually far from the cause.
+- **A `static let shared` added "just for this one thing"** — it is never just one thing.

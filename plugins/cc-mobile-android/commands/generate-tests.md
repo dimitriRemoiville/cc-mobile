@@ -21,7 +21,7 @@ Exactly one of:
 
 ## Procedure
 
-1. **Load context.** Read `.claude/skills/android-testing/SKILL.md` and `.claude/skills/kotlin-style/SKILL.md`.
+1. **Load context.** Read `${CLAUDE_PLUGIN_ROOT}/skills/android-testing/SKILL.md` and `${CLAUDE_PLUGIN_ROOT}/skills/kotlin-style/SKILL.md`.
 
 2. **Discover targets.**
    - `--feature`: glob `app/src/main/java/**/<feature>/**/*.kt`. Filter to testable types (see classification below).

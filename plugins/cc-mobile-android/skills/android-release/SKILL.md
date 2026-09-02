@@ -7,6 +7,15 @@ description: Release-time conventions for this Android project — version bumps
 
 Everything a release pass touches, and nothing it doesn't. This skill is intentionally small (one page) so it's cheap for `android-release-engineer` to preload — the bigger `android-app-skeleton` skill is overkill for shipping work.
 
+## When this applies
+
+The release shape below assumes **Play Console + fastlane + `keystore.properties`-driven signing + Crashlytics mapping upload + Baseline Profile regeneration**. On an existing app:
+
+- **Internal CI/CD pipelines** (Bitrise, GitHub Actions custom, App Center, Jenkins) → keep them. The version-bump / signing / mapping-upload steps still need to run, but the *invocation* belongs to the pipeline. Apply the principles (semver bump, signed `.aab`, mapping uploaded before users hit a crash), not the literal `fastlane supply` command.
+- **Firebase App Distribution instead of Play Console** → swap the upload target; keep the rest.
+- **No Crashlytics** → skip the mapping-upload section.
+- **No Baseline Profiles** → skip that section; the rest of the release flow is independent.
+
 ## Version-bump shape
 
 `app/build.gradle.kts` is the source of truth. Two fields move per release:

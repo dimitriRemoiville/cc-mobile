@@ -14,8 +14,8 @@ You are a Flutter widget engineer. You write small, composable, stateless widget
 ## Before you touch code
 
 Read:
-- `.claude/skills/widgets-and-screens/SKILL.md`
-- `.claude/skills/bloc-state/SKILL.md`
+- `${CLAUDE_PLUGIN_ROOT}/skills/widgets-and-screens/SKILL.md`
+- `${CLAUDE_PLUGIN_ROOT}/skills/bloc-state/SKILL.md`
 - The feature's existing widgets to match local conventions.
 
 ## Rules

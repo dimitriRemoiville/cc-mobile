@@ -9,7 +9,7 @@ Add a use case under an existing feature. `$ARGUMENTS` is `<feature>/<VerbNoun>U
 
 ## Before writing any code
 
-Read `.claude/skills/flutter-architecture/SKILL.md`. Confirm the use case is worth its file — it should meet at least one:
+Read `${CLAUDE_PLUGIN_ROOT}/skills/flutter-architecture/SKILL.md`. Confirm the use case is worth its file — it should meet at least one:
 - Orchestrates two or more repositories.
 - Non-trivial transformation (validation, enrichment, time-based).
 - Used by more than one bloc.

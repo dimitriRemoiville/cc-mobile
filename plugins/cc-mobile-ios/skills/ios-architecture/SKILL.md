@@ -1,142 +1,71 @@
 ---
 name: ios-architecture
-description: How MVVM + Clean Architecture is applied in this Swift + SwiftUI codebase. Load when designing a new feature, deciding where code belongs, adding a repository or use case, or reviewing layer boundaries.
+description: How MVVM + Clean Architecture is applied in this Swift + SwiftUI codebase — the `AppCore` / `AppFeatures` / `App` target split, the dependency rule, the `Outcome` boundary, and the "when to add a use case" rubric. Load when designing a new feature, deciding where code belongs, adding a repository or use case, or reviewing layer boundaries.
 ---
 
-# Clean Architecture in this project
+# iOS architecture (MVVM + Clean)
 
-## The three layers
+For Clean Architecture theory and MVVM basics, the [Apple app-architecture guidance](https://developer.apple.com/documentation/swiftui/model-data) and the usual Clean Architecture literature apply. This file documents the shape *this* project uses and the calls it has already made.
+
+## When this applies
+
+This skill describes **MVVM + Clean Architecture over three SPM targets with a composition root** — the shape `/init-ios-app` scaffolds. On an existing app that already chose differently, defer to it instead of refactoring:
+
+- **TCA / The Composable Architecture** (`import ComposableArchitecture`, `@Reducer`, `Store<State, Action>`) — keep it. Don't push view models, use cases, or the `Outcome` contract; TCA has its own effect and dependency story.
+- **MVI / Redux-style stores** (a single `dispatch(action)` entry point, a reducer) — keep it. Don't flag "user actions should be discrete view-model methods"; that rule is MVVM-only.
+- **VIPER / MVP / MVC (UIKit)** — out of scope. This skill won't help and may mislead.
+- **Single-target app, no SPM split** — very common and perfectly valid. The dependency *rule* still applies (domain depends on nothing); the *target boundary* that enforces it doesn't exist, so enforce it by review instead of by compiler.
+
+Surface the mismatch in your summary (`This project is TCA, not MVVM — applying boundary guidance only`) and apply only the framework-agnostic principles: dependency direction, framework-free domain, errors mapped at the boundary.
+
+## The dependency rule
 
 ```
-Presentation  — SwiftUI views + @Observable ViewModels + ViewState. Knows SwiftUI.
-      ↓
-   Domain     — Pure Swift. Structs, enums, protocols, use cases. No SwiftUI / UIKit / URLSession / SwiftData.
-      ↑
-    Data      — Repository implementations. Knows URLSession, SwiftData, Keychain, etc.
+App (composition root)  →  AppFeatures  →  AppCore
+   URLSession, Keychain,      SwiftUI views,      Foundation only:
+   SwiftData, Firebase        @Observable VMs     models, protocols, use cases
 ```
 
-**Dependency rule:** `Presentation → Domain ← Data`. Arrows never reverse. Both outer layers depend on `Domain`; `Domain` depends on nothing outside `Foundation` + `Swift`.
+Arrows never reverse. `AppCore` imports **Foundation and nothing else** — no SwiftUI, no UIKit, no URLSession, no SwiftData, no Security. That constraint is what lets `AppCoreTests` run under `swift test` with no simulator.
 
-## Domain layer
+`AppFeatures` depends on **protocols**, never implementations. `URLSessionAPIClient` and `KeychainStoreLive` live in `App` precisely so a feature can't reach for them by accident. If a feature needs one, it takes the protocol in its initializer and `App` supplies the live type.
 
-What lives here:
-- **Models** — plain Swift structs / enums. `Sendable`, `Equatable`, usually `Hashable`. No framework annotations.
-- **Repository protocols** — describe what data the domain needs, in domain types.
-- **Use cases** — one type per business action. Async. Injected dependencies are protocols.
+The canonical layout, and the working `Splash` feature that demonstrates it, live in `${CLAUDE_PLUGIN_ROOT}/skills/ios-app-skeleton/SKILL.md` and its `references/`. Clone that shape when adding the next feature.
 
-```swift
-// Domain/Model/Order.swift
-struct Order: Equatable, Sendable {
-    let id: OrderID
-    let items: [OrderItem]
-    let total: Money
-}
+## Errors as values
 
-// Domain/Repository/OrderRepository.swift
-protocol OrderRepository: Sendable {
-    func get(id: OrderID) async throws -> Order
-    func observe() -> AsyncStream<[Order]>
-}
-
-// Domain/UseCase/SubmitOrderUseCase.swift
-struct SubmitOrderUseCase {
-    private let orders: OrderRepository
-    private let now: () -> Date
-
-    init(orders: OrderRepository, now: @escaping () -> Date = Date.init) {
-        self.orders = orders
-        self.now = now
-    }
-
-    func callAsFunction(_ draft: OrderDraft) async throws -> Order { /* ... */ }
-}
-```
-
-## Data layer
-
-What lives here:
-- **Remote** — URLSession-backed client + DTOs (`Codable`).
-- **Local** — SwiftData models + persistence wrappers.
-- **Mappers** — DTO / SwiftData model ↔ domain model. One-way functions.
-- **Repository implementations** — conform to the domain protocol.
-
-```swift
-// Data/Remote/OrderDTO.swift
-struct OrderDTO: Decodable {
-    let id: String
-    let items: [OrderItemDTO]
-    let totalCents: Int
-    let createdAt: String
-}
-
-// Data/Mapper/OrderMapper.swift
-extension OrderDTO {
-    func toDomain() -> Order {
-        Order(
-            id: OrderID(id),
-            items: items.map { $0.toDomain() },
-            total: .cents(totalCents)
-        )
-    }
-}
-
-// Data/Repository/LiveOrderRepository.swift
-final class LiveOrderRepository: OrderRepository {
-    private let client: APIClient
-
-    init(client: APIClient) { self.client = client }
-
-    func get(id: OrderID) async throws -> Order {
-        do {
-            let dto: OrderDTO = try await client.get("/orders/\(id.raw)")
-            return dto.toDomain()
-        } catch let error as URLError {
-            throw DomainError.network(code: error.code.rawValue)
-        } catch is DecodingError {
-            throw DomainError.invalidResponse
-        }
-    }
-}
-```
-
-## Presentation layer
-
-What lives here:
-- **Views** — the Root / Stateless split described in the `swiftui-views` skill.
-- **ViewModels** — `@Observable @MainActor final class`, exposing `ViewState`, calling use cases.
-- **ViewState / ViewAction / ViewEvent** — the contract between view and view model.
-- **Navigation** — route enums, nav-stack composition.
+**Domain-facing signatures return `Outcome<Success>`**, defined once in `AppCore` alongside the `DomainError` taxonomy. Repositories map `URLError` / `DecodingError` / `OSStatus` into `DomainError` at the boundary; nothing above the data layer knows those types exist. Full contract, including the `CancellationError` trap, in `swift-style`.
 
 ## When to add a use case
 
 **Add one when:**
-- There's business logic (validation, composition of multiple repositories, derived computation).
+
+- There's business logic — validation, composition of multiple repositories, derived computation.
 - Multiple view models call the same operation.
-- The operation has testable branches that aren't interesting to test via a view model.
+- The operation has testable branches that aren't interesting to exercise through a view model.
 
-**Skip it when:**
-- The view model would literally just call `repository.foo()` and return. Inject the repository directly in that case — but only if the rest of the codebase is consistent about this.
+**Skip it when** the use case would literally be `repository.foo()` with no transformation. Inject the repository into the view model directly — but only if the rest of the codebase is consistent about that; a mix of both is worse than either.
 
-## Folder or SPM package?
+Use cases are `struct`s with a single `callAsFunction`, so call sites read `try await submit(draft)`.
 
-- **Start with folders** inside the app target: `Feature_X/Data`, `Feature_X/Domain`, `Feature_X/Presentation`.
-- **Promote to SPM packages** when: the feature is large, build time is hurting, or you want enforced module boundaries. Typical splits: `Core`, `Networking`, `Persistence`, `Feature_X`.
-- Don't over-modularize early — package boundaries are expensive to rearrange in Xcode.
+## Folders or SPM packages?
+
+- **Start with the three scaffolded targets.** Add features as folders inside `AppFeatures`.
+- **Promote a feature to its own package** when it's large, when build time is hurting, or when you want the compiler to enforce a boundary that review keeps failing to.
+- **Don't over-modularize early.** Package boundaries are cheap to add and expensive to rearrange in Xcode.
 
 ## Feature checklist
 
-When adding a feature, every item below should exist:
+Every item should exist before a feature is "done":
 
-- [ ] Domain model in `Domain/Model/`
-- [ ] Repository protocol in `Domain/Repository/`
-- [ ] Use case(s) in `Domain/UseCase/` (if warranted)
-- [ ] DTO + mapper in `Data/Remote/` and `Data/Mapper/`
-- [ ] API endpoint definition in `Data/Remote/`
-- [ ] `Live…Repository` (or named) in `Data/Repository/`
-- [ ] Registered in composition root / DI container
-- [ ] ViewState + ViewAction + ViewEvent in `Presentation/<Feature>/`
-- [ ] `@Observable` ViewModel with constructor-injected dependencies
-- [ ] Root + Stateless views + at least one `#Preview`
-- [ ] Navigation destination wired into `AppRoute`
-- [ ] Unit tests for use case, mapper, view model
-- [ ] UI test or snapshot test for the view (at least happy path)
+- [ ] Domain model in `AppCore` — `Sendable`, `Equatable`, no framework imports
+- [ ] Repository protocol in `AppCore`, returning `Outcome<T>`
+- [ ] Use case(s) in `AppCore` (if warranted by the rubric above)
+- [ ] DTO + `toDomain()` mapper in the data layer
+- [ ] `Live…Repository` in `App`, mapping platform errors to `DomainError`
+- [ ] Registered in `CompositionRoot`
+- [ ] `<Feature>ViewState` (+ `ViewAction` / `ViewEvent` if the screen needs them)
+- [ ] `@Observable @MainActor final class` view model, constructor-injected
+- [ ] `<Feature>RootView` + stateless `<Feature>View` + at least one `#Preview`
+- [ ] Destination added to the typed route enum
+- [ ] Tests for the use case, the mapper, and the view model

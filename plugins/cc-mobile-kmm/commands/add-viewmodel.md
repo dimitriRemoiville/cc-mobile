@@ -9,7 +9,7 @@ Add a shared ViewModel in `shared/src/commonMain` under an existing feature. `$A
 
 ## Before writing any code
 
-Read `.claude/skills/shared-viewmodels/SKILL.md` and `.claude/skills/kmm-ios-interop/SKILL.md`. The ViewModel is the most common iOS-facing surface — shape it so Swift callers don't suffer.
+Read `${CLAUDE_PLUGIN_ROOT}/skills/shared-viewmodels/SKILL.md` and `${CLAUDE_PLUGIN_ROOT}/skills/kmm-ios-interop/SKILL.md`. The ViewModel is the most common iOS-facing surface — shape it so Swift callers don't suffer.
 
 ## What to produce
 
@@ -42,7 +42,7 @@ Four files in `shared/src/commonMain/kotlin/com/example/app/feature/<feature>/pr
 
 ## Tests
 
-Add `shared/src/commonTest/.../presentation/<Name>ViewModelTest.kt` following `.claude/skills/kmm-testing/SKILL.md`:
+Add `shared/src/commonTest/.../presentation/<Name>ViewModelTest.kt` following `${CLAUDE_PLUGIN_ROOT}/skills/kmm-testing/SKILL.md`:
 - `StandardTestDispatcher` set via `Dispatchers.setMain` in `@BeforeTest`, reset in `@AfterTest`.
 - `runTest(dispatcher) { }` drives coroutines.
 - Cover each action → state transition. Use `advanceUntilIdle()` then assert on `vm.state.value`.

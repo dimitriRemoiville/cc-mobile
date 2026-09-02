@@ -1,113 +1,60 @@
 ---
 name: android-architecture
-description: How MVVM + Clean Architecture is applied in this Kotlin + Compose codebase. Load when designing a new feature, deciding where code belongs, adding a repository or use case, or reviewing layer boundaries.
+description: How MVVM + Clean Architecture is applied in this Kotlin + Compose codebase — the project-specific deltas on top of [the official Architecture guide](https://developer.android.com/topic/architecture) and [Now in Android](https://github.com/android/nowinandroid). Load when designing a new feature, deciding where code belongs, adding a repository or use case, or reviewing layer boundaries. Not for apps using MVI, layer-first packaging, or non-Clean architectures.
 ---
 
-# Android architecture (MVVM + Clean)
+# Android architecture (project delta)
 
-## The three layers
+For UI / Domain / Data layer fundamentals — what each layer is for, UDF, repositories, state holders — read the [official Architecture guide](https://developer.android.com/topic/architecture). This file documents only this project's specific choices on top of that.
+
+## When this applies
+
+This skill assumes **MVVM + Clean + Hilt + Retrofit + Room + feature-first packaging** — the shape `/init-android-app` scaffolds. On an existing app that already chose differently, defer:
+
+- **MVI** (sealed `Action`/`Intent`/`Reducer`, single `dispatch(action)` entry point, Mavericks/Orbit) → keep it. Don't push "discrete public functions on the ViewModel."
+- **Layer-first** (top-level `ui/`, `domain/`, `data/` with features nested under each) → also valid; don't migrate.
+- **MVP / MVC / VIPER / Redux-style stores** → out of scope.
+
+Surface the mismatch (`This project is MVI, applying clean-boundary guidance only`) and apply only the framework-agnostic principles: dependency direction, framework-free domain, errors-as-values at the boundary.
+
+## Layer + dependency rule
 
 ```
 ui        ─ Compose + ViewModel + UiState. Knows Android & Compose.
    ↓
-domain    ─ Pure Kotlin. Business rules. No Android, no Compose, no Retrofit, no Room.
+domain    ─ Pure Kotlin. Business rules. No Android, Compose, Retrofit, Room.
    ↑
-data      ─ Repository implementations. Knows Retrofit, Room, DataStore, etc.
+data      ─ Repository implementations. Knows Retrofit, Room, DataStore.
 ```
 
-**Dependency rule:** `ui → domain ← data`. Arrows never reverse. Both outer layers depend on `domain`; `domain` depends on nothing but Kotlin + coroutines.
+**`ui → domain ← data`. Arrows never reverse.** Both outer layers depend on `domain`; `domain` depends on nothing but Kotlin + coroutines. The reviewer flags `android.*` / Compose / Retrofit / Room imports inside any `domain/` package.
 
-**Per feature, not global.** These three are the layers *within* a feature: `<feature>/ui/`, `<feature>/domain/`, `<feature>/data/`. The skeleton uses `ui/` (not `presentation/`) — same idea, fewer letters, matches `core/ui/theme/` naming. Cross-feature plumbing of the same layers lives under `core/{ui,domain,data}/`.
+## Feature-first, not global (project choice)
 
-## Domain layer
+The three layers live **inside each feature**: `<feature>/ui/`, `<feature>/domain/`, `<feature>/data/`. **No global `ui/`, `domain/`, `data/` at the package root.** Cross-feature plumbing — analytics interfaces, network factory, `Outcome` / `DomainError` types, theme, top-level nav — sits under `core/{ui,domain,data,navigation}/`.
 
-What lives here:
-- **Models** — plain Kotlin data classes. No annotations from Android, Room, Moshi, or Retrofit.
-- **Repository interfaces** — describe what data the domain needs, in domain types.
-- **Use cases** — one class per business action. Injectable. Suspend or return `Flow`.
+We use `ui/` (not `presentation/`) — fewer letters, matches `core/ui/theme/`.
+
+The canonical Feed and Profile features in `${CLAUDE_PLUGIN_ROOT}/skills/android-app-skeleton/references/feed-feature.md` / `profile-feature.md` are the working examples — clone their shape when adding the next feature.
+
+## Errors as values
+
+**Domain-facing signatures return `Outcome<T>`, never `Result<T>` and never raw `throw`.** Sealed type defined once in `core/domain/Outcome.kt`; matching `DomainError` taxonomy in `core/domain/DomainError.kt`. Repositories map exceptions to `DomainError` at the boundary via:
 
 ```kotlin
-// domain/model/Order.kt
-data class Order(val id: OrderId, val items: List<OrderItem>, val total: Money)
-
-// domain/repository/OrderRepository.kt
-interface OrderRepository {
-    suspend fun getOrder(id: OrderId): Outcome<Order>
-    fun observeOrders(): Flow<List<Order>>
-}
-
-// domain/usecase/SubmitOrderUseCase.kt
-class SubmitOrderUseCase @Inject constructor(
-    private val orders: OrderRepository,
-    private val clock: Clock,
-) {
-    suspend operator fun invoke(draft: OrderDraft): Outcome<Order> { ... }
-}
+runCatching { api.getOrder(id.raw).toDomain() }.toOutcome(::toDomainError)
 ```
 
-`Outcome<T>` is the project's canonical sealed result, defined once in `core/domain/Outcome.kt` (see `android-app-skeleton`). Domain-facing signatures never use `Result<T>`.
+The `toOutcome` adapter lives in `core/data/network/Outcomes.kt` (see `kotlin-style` for the rule and rationale). Open-coding `runCatching { ... }.fold(...)` silently swallows `CancellationException` — the reviewer flags this every time.
 
-## Data layer
-
-What lives here:
-- **Remote** — Retrofit service + DTOs (with `@Serializable` or Moshi annotations).
-- **Local** — Room `@Entity`, `@Dao`.
-- **Mappers** — DTO/Entity ↔ domain model. One-way conversion functions, no shared interface required.
-- **Repository implementation** — implements the domain interface.
+## User actions are discrete VM functions
 
 ```kotlin
-// <feature>/data/remote/OrderDto.kt — DTO + colocated mapper
-@Serializable
-data class OrderDto(val id: String, /* ... */)
-
-fun OrderDto.toDomain(): Order = Order(id = OrderId(id), /* ... */)
-
-// <feature>/data/remote/OrderApi.kt
-interface OrderApi {
-    @GET("orders/{id}")
-    suspend fun getOrder(@Path("id") id: String): OrderDto
-}
-
-// <feature>/data/repository/OrderRepositoryImpl.kt
-class OrderRepositoryImpl @Inject constructor(
-    private val api: OrderApi,
-    private val dao: OrderDao,
-) : OrderRepository {
-    override suspend fun getOrder(id: OrderId): Outcome<Order> =
-        runCatching { api.getOrder(id.raw).toDomain() }.toOutcome(::toDomainError)
-}
+fun submit(draft: OrderDraft) { ... }
+fun retry() { ... }
 ```
 
-The mapper sits in `OrderDto.kt` next to the DTO it transforms. Promote to a `<feature>/data/mapper/` package only when several DTOs map to the same domain type and the shared file would clarify ownership — see the feature checklist below.
-
-`toOutcome` and `toDomainError` are scaffolded once in `core/data/network/Outcomes.kt` (see `android-app-skeleton` → "core/data/"). Every repository goes through them — the helper rethrows `CancellationException`, which the open-coded `runCatching { ... }.fold(...)` shape silently swallows.
-
-## UI layer (`<feature>/ui/`)
-
-What lives here:
-- **Composables** — the Route/Screen split described in the `compose-ui` skill.
-- **ViewModels** — expose `StateFlow<UiState>` and (when needed) `Channel<UiEvent>` for one-shot effects; call use cases (not repositories directly, unless the action is genuinely trivial).
-- **UiState / UiEvent** — the contract between Composable and ViewModel. **User actions are discrete public functions on the ViewModel** (`fun submit(...)`, `fun retry()`), and the Composable takes one lambda per action — the shape Google's [Now in Android](https://github.com/android/nowinandroid) uses, and the canonical MVVM shape. Escalate to a sealed `UiAction` + a single `onAction(action: UiAction)` callback only when the screen has ≥5 distinct interactions and a flat lambda surface would be unwieldy. That's an MVI shape; this project is MVVM by default.
-- **Navigation** — route declarations live with the feature; the top-level `AppNavGraph` in `core/navigation/` composes them.
-
-```kotlin
-@HiltViewModel
-class OrderViewModel @Inject constructor(
-    private val submit: SubmitOrderUseCase,
-    private val analytics: AnalyticsTracker,
-) : ViewModel() {
-    private val _state = MutableStateFlow<OrderUiState>(OrderUiState.Loading)
-    val state: StateFlow<OrderUiState> = _state.asStateFlow()
-
-    private val _events = Channel<OrderEvent>(Channel.BUFFERED)
-    val events = _events.receiveAsFlow()
-
-    init { analytics.track(AnalyticsEvent.OrderViewed) }
-
-    fun submit(draft: OrderDraft) { ... }
-    fun retry() { ... }
-}
-```
+The Composable takes one lambda per action — the shape [Now in Android](https://github.com/android/nowinandroid) uses, and the canonical MVVM shape. Escalate to a sealed `UiAction` + a single `onAction(action: UiAction)` callback only when the screen has ≥5 distinct interactions and the flat surface is unwieldy. That's an MVI shape; this project is MVVM by default.
 
 ## When to add a use case
 
@@ -117,12 +64,15 @@ class OrderViewModel @Inject constructor(
 - The operation has testable branches that aren't interesting to test via a ViewModel.
 
 **Skip it when:**
-- The ViewModel would literally just call `repository.foo()` and return. Inject the repository directly in that case, but only if the rest of the codebase is consistent about this.
+- The VM would literally just call `repository.foo()` and return. Inject the repository directly in that case, but only if the codebase is consistent about it.
+
+[Now in Android](https://github.com/android/nowinandroid) takes the same posture — it uses use cases mainly to **combine multi-repo streams** (`GetUserNewsResourcesUseCase` combines `NewsResource` + `UserData`), and single-repo passthrough goes VM → repository directly.
 
 ## Module or package?
 
-- **Start with packages** inside `:app`, **feature-first**: `feature_x/{ui,domain,data}/`. Cross-feature plumbing under `core/` (see `android-app-skeleton` for the canonical layout).
-- **Promote to modules** when: the feature is big, has its own team, or you want build-time isolation. Common split: `:core:domain`, `:core:data`, `:feature:orders`. Feature-first packages promote cleanly to feature-first modules — that's the main reason to start this way.
+- **Start with packages** inside `:app`, feature-first. No extra `build.gradle.kts` until you actually need build-time isolation.
+- **Promote to modules** when a feature has its own team, or you want compile-time enforcement of `domain/` being Android-free (a `kotlin.jvm` module makes the layer rule a compile error, not a review comment). Common split: `:core:domain`, `:core:data`, `:feature:orders`.
+- Feature-first **packages** promote cleanly to feature-first **modules** — that's the main reason to start this way.
 - Don't over-modularize early — module boundaries are expensive to rearrange.
 
 ## Feature checklist
@@ -130,13 +80,13 @@ class OrderViewModel @Inject constructor(
 When adding a feature, every item below should exist:
 
 - [ ] Domain model in `<feature>/domain/model/`
-- [ ] Repository interface in `<feature>/domain/repository/`
-- [ ] Use case(s) in `<feature>/domain/usecase/` (if warranted — see "When to add a use case")
-- [ ] DTO in `<feature>/data/remote/` (mapping function colocated with the DTO is fine; promote to a `mapper/` package only when several DTOs map to the same domain type)
+- [ ] Repository interface in `<feature>/domain/repository/` (returns `Outcome<T>`)
+- [ ] Use case(s) in `<feature>/domain/usecase/` (if warranted — see above)
+- [ ] DTO in `<feature>/data/remote/` with colocated `toDomain()` mapper
 - [ ] Retrofit service method in `<feature>/data/remote/`
-- [ ] RepositoryImpl in `<feature>/data/repository/` (consumes `RemoteDataSource`-style helpers from `core/data/network/`; never `runCatching { ... }.fold(...)` open-coded)
+- [ ] RepositoryImpl in `<feature>/data/repository/` (uses `toOutcome(::toDomainError)`; never open-coded `runCatching.fold`)
 - [ ] Hilt `@Module` in `<feature>/data/di/`
-- [ ] UiState + UiAction + UiEvent in `<feature>/ui/`
+- [ ] UiState + (optionally UiAction) + UiEvent in `<feature>/ui/`
 - [ ] ViewModel with `@HiltViewModel`
 - [ ] Route + Screen composables + at least one `@Preview`
 - [ ] Nav destination wired in (`core/navigation/AppNavGraph.kt`)

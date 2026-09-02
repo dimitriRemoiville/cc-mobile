@@ -8,7 +8,7 @@ You are scaffolding a new feature called **$ARGUMENTS**.
 
 Follow this sequence — do not skip steps:
 
-1. **Load context.** Read `CLAUDE.md` and skim `.claude/skills/android-architecture/SKILL.md`, `.claude/skills/android-app-skeleton/SKILL.md` (the canonical feature shape lives there), `.claude/skills/hilt-di/SKILL.md`, `.claude/skills/retrofit-networking/SKILL.md`, and `.claude/skills/compose-ui/SKILL.md`.
+1. **Load context.** Read `CLAUDE.md` and skim `${CLAUDE_PLUGIN_ROOT}/skills/android-architecture/SKILL.md`, `${CLAUDE_PLUGIN_ROOT}/skills/android-app-skeleton/SKILL.md` (the canonical feature shape lives there), `${CLAUDE_PLUGIN_ROOT}/skills/hilt-di/SKILL.md`, `${CLAUDE_PLUGIN_ROOT}/skills/retrofit-networking/SKILL.md`, and `${CLAUDE_PLUGIN_ROOT}/skills/compose-ui/SKILL.md`.
 2. **Scan the existing codebase** for the nearest similar feature. Match its package structure, naming, and module conventions. Do not introduce a new pattern unless there's a clear reason.
 3. **Produce a short plan** (5–10 lines) listing every file you'll create or touch. Confirm with the user before writing if the plan introduces new modules or changes build files.
 4. **Generate the feature** with this **feature-first** structure (per `android-architecture` and `android-app-skeleton`; layer-first packaging is rejected here on purpose):

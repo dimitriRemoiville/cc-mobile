@@ -1,188 +1,90 @@
 ---
 name: swiftdata-persistence
-description: SwiftData patterns for this iOS project — @Model entities, ModelContext/ModelContainer, @Query in SwiftUI, migrations via VersionedSchema, and protocol-wrapped testability. Load whenever writing or reviewing code under `data/persistence/`.
+description: Project-specific SwiftData conventions — the actor-wrapped repository boundary, when `@Query` is allowed in a view, the `VersionedSchema` migration policy, in-memory test containers, and the `ModelContext` isolation rules. Load whenever writing or reviewing persistence code.
 ---
 
-# SwiftData persistence
+# SwiftData (project delta)
 
-## Model
+For SwiftData fundamentals — `@Model`, `@Attribute`, `@Relationship`, `ModelContainer` / `ModelContext`, `#Predicate`, `FetchDescriptor`, `@Query`, `VersionedSchema` and `SchemaMigrationPlan` mechanics — read [Apple's SwiftData documentation](https://developer.apple.com/documentation/swiftdata). This file documents only this project's decisions. The scaffolded container and schema templates live in `.claude/skills/ios-app-skeleton/references/optional-swiftdata.md`.
 
-```swift
-import SwiftData
+## When this applies
 
-@Model
-final class Order {
-    @Attribute(.unique) var id: String
-    var customerId: String
-    var totalCents: Int
-    var status: OrderStatus
-    var createdAt: Date
+SwiftData, behind a repository protocol. On an existing app:
 
-    @Relationship(deleteRule: .cascade, inverse: \LineItem.order)
-    var lineItems: [LineItem] = []
+- **Core Data** (`NSManagedObject`, `.xcdatamodeld`, `NSPersistentContainer`) → skip. Migrating to SwiftData is a project, not a refactor, and Core Data still does things SwiftData can't (fine-grained fetch control, complex migrations).
+- **Realm** (`import RealmSwift`) → skip; the object-DB threading model is different in kind.
+- **GRDB / raw SQLite** → skip the model layer; the repository-boundary rule below still applies.
+- **`UserDefaults` for structured data** → worth flagging as a correctness risk, but don't migrate unasked.
 
-    init(id: String, customerId: String, totalCents: Int, status: OrderStatus, createdAt: Date) {
-        self.id = id
-        self.customerId = customerId
-        self.totalCents = totalCents
-        self.status = status
-        self.createdAt = createdAt
-    }
-}
+## The repository boundary
 
-enum OrderStatus: String, Codable { case pending, paid, cancelled }
-```
-
-- Always annotate the stable identity column with `@Attribute(.unique)`.
-- `@Relationship` with explicit `deleteRule` and `inverse` — missing `inverse` causes orphans.
-- Enums: `Codable` + `RawRepresentable` store cleanly; avoid associated values as stored attributes.
-
-## Container
-
-One `ModelContainer` per process, owned at app launch:
+**`@Model` types never leave the data layer.** Domain code speaks `AppCore` value types; the repository maps between them. A `@Model` class reaching a view model drags SwiftData's identity, faulting, and isolation semantics into code that shouldn't know they exist.
 
 ```swift
-@main
-struct AppEntry: App {
-    let container: ModelContainer
-
-    init() {
-        do {
-            container = try ModelContainer(
-                for: Order.self, LineItem.self,
-                migrationPlan: AppMigrationPlan.self,
-                configurations: ModelConfiguration(
-                    schema: Schema(versionedSchema: AppSchemaV2.self),
-                    isStoredInMemoryOnly: false,
-                    cloudKitDatabase: .automatic,
-                ),
-            )
-        } catch {
-            fatalError("Failed to build ModelContainer: \(error)")
-        }
-    }
-
-    var body: some Scene {
-        WindowGroup { RootView() }
-            .modelContainer(container)
-    }
-}
-```
-
-## Repository protocol (testable boundary)
-
-SwiftData types (`ModelContext`, `@Query`) are UI-friendly but cross-cutting business logic needs a protocol:
-
-```swift
-protocol OrderRepository: Sendable {
-    func upsert(_ order: OrderDTO) async throws
-    func orders(for customerId: String) async throws -> [OrderDTO]
-    func observe(customerId: String) -> AsyncStream<[OrderDTO]>
-}
-
 actor SwiftDataOrderRepository: OrderRepository {
     private let context: ModelContext
     init(context: ModelContext) { self.context = context }
 
-    func upsert(_ order: OrderDTO) async throws {
-        let descriptor = FetchDescriptor<Order>(predicate: #Predicate { $0.id == order.id })
-        if let existing = try context.fetch(descriptor).first {
-            existing.apply(order)
-        } else {
-            context.insert(Order(dto: order))
+    func upsert(_ order: Order) async -> Outcome<Void> {
+        let id = order.id.raw
+        let descriptor = FetchDescriptor<OrderModel>(predicate: #Predicate { $0.id == id })
+        do {
+            if let existing = try context.fetch(descriptor).first {
+                existing.apply(order)
+            } else {
+                context.insert(OrderModel(order))
+            }
+            try context.save()
+            return .success(())
+        } catch {
+            return .failure(.unknown(error.localizedDescription))
         }
-        try context.save()
     }
-    // ...
 }
 ```
 
-- `actor` enforces serialized access to the `ModelContext` (SwiftData contexts are not `Sendable`).
-- Use `#Predicate<Order>` macros, not `NSPredicate`.
+Two things that are easy to get wrong here:
 
-## @Query in SwiftUI
+- **`actor`, because `ModelContext` is not `Sendable`.** The actor is what serializes access. Passing a context across isolation domains is undefined behaviour, not a warning.
+- **Hoist captured values out of `#Predicate`.** `$0.id == order.id.raw` fails to compile or misbehaves inside the macro; bind `let id = order.id.raw` first. This costs people an hour every time.
 
-Direct `@Query` is fine for leaf screens that are a thin list:
+## `@Query` in a view
+
+Allowed **only** on a leaf screen that is a thin list over local data with no business logic:
 
 ```swift
 struct OrdersList: View {
-    @Query(sort: \Order.createdAt, order: .reverse) private var orders: [Order]
-    var body: some View { List(orders) { OrderRow(order: $0) } }
+    @Query(sort: \OrderModel.createdAt, order: .reverse) private var orders: [OrderModel]
+    var body: some View { List(orders) { OrderRow(model: $0) } }
 }
 ```
 
-For filtered queries, construct once with `@Query(filter:)` or a dynamic `FetchDescriptor` via `@Query` initializer.
-
-Non-trivial screens route through the ViewModel + repository, not `@Query`.
+Anything with filtering logic, derived state, or a write path goes through the view model and the repository. `@Query` is a convenience for the trivial case, not an alternative architecture — and it re-introduces the `@Model`-in-the-view coupling the boundary rule exists to prevent, so keep it to screens where that's genuinely all there is.
 
 ## Migrations
 
-Model each schema version as `VersionedSchema`, then a `SchemaMigrationPlan`:
-
-```swift
-enum AppSchemaV1: VersionedSchema {
-    static var versionIdentifier = Schema.Version(1, 0, 0)
-    static var models: [any PersistentModel.Type] = [Order.self, LineItem.self]
-}
-
-enum AppSchemaV2: VersionedSchema {
-    static var versionIdentifier = Schema.Version(2, 0, 0)
-    static var models: [any PersistentModel.Type] = [Order.self, LineItem.self]
-}
-
-enum AppMigrationPlan: SchemaMigrationPlan {
-    static var schemas: [any VersionedSchema.Type] = [AppSchemaV1.self, AppSchemaV2.self]
-    static var stages: [MigrationStage] = [migrateV1toV2]
-
-    static let migrateV1toV2 = MigrationStage.custom(
-        fromVersion: AppSchemaV1.self,
-        toVersion: AppSchemaV2.self,
-        willMigrate: nil,
-        didMigrate: { context in
-            let orders = try context.fetch(FetchDescriptor<Order>())
-            for order in orders where order.status == .pending && order.createdAt < .oldEnoughToAbandon {
-                order.status = .cancelled
-            }
-            try context.save()
-        },
-    )
-}
-```
-
-Use `.lightweight` when the only change is additive. Use `.custom` for transforms.
+Every schema change gets a new `VersionedSchema` and a `MigrationStage`, even the additive ones. `.lightweight` when the change is purely additive, `.custom` when data has to be transformed. **Never mutate an existing `VersionedSchema` in place** — shipped devices are already on it, and the container has no way to detect the change.
 
 ## Testing
 
+In-memory containers, per test:
+
 ```swift
-import SwiftData
-import Testing
-
-@Suite(.serialized)
-struct OrderRepositoryTests {
-    func makeContext() throws -> ModelContext {
-        let container = try ModelContainer(
-            for: Order.self,
-            configurations: ModelConfiguration(isStoredInMemoryOnly: true),
-        )
-        return ModelContext(container)
-    }
-
-    @Test func upsertRoundTrip() async throws {
-        let context = try makeContext()
-        let sut = SwiftDataOrderRepository(context: context)
-        let dto = OrderDTO.sample
-        try await sut.upsert(dto)
-        #expect(try await sut.orders(for: dto.customerId).count == 1)
-    }
-}
+let container = try ModelContainer(
+    for: OrderModel.self,
+    configurations: ModelConfiguration(isStoredInMemoryOnly: true)
+)
+let sut = SwiftDataOrderRepository(context: ModelContext(container))
 ```
 
-`isStoredInMemoryOnly: true` keeps tests hermetic. Don't rely on file cleanup.
+`isStoredInMemoryOnly: true` keeps tests hermetic — don't rely on file cleanup between runs. Suites that share a container need `@Suite(.serialized)`.
+
+Migration stages deserve their own tests: build a container on the old schema, insert representative rows, then open with the migration plan and assert the transform.
 
 ## Hard nos
 
-- No passing `ModelContext` across actors. Build a new one from the container in each isolation domain.
-- No `try! context.save()` in shipping code. Propagate.
-- No mutating `@Model` properties off the main actor while also observing them on the main actor — use an actor repo or `.mainContext`.
-- No relationship without `inverse`.
-- No SwiftData usage in Domain/Data protocols. Domain speaks DTOs.
+- **No passing `ModelContext` across actors.** Build one from the container in each isolation domain.
+- **No `try!` on `save()`** in shipping code. Propagate or map to `DomainError`.
+- **No `@Relationship` without an explicit `inverse:`** — the omission silently orphans records.
+- **No mutating a `@Model` off the main actor** while also observing it on the main actor.
+- **No SwiftData import in `AppCore`.** The domain speaks value types; that's the whole point of the boundary.

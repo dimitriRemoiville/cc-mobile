@@ -8,7 +8,7 @@ Add a new Compose screen named **$ARGUMENTS**. This command is for presentation-
 
 Steps:
 
-1. Read `.claude/skills/compose-ui/SKILL.md`, `.claude/skills/android-accessibility/SKILL.md`, and the nearest existing screen in the project for structural reference.
+1. Read `${CLAUDE_PLUGIN_ROOT}/skills/compose-ui/SKILL.md`, `${CLAUDE_PLUGIN_ROOT}/skills/android-accessibility/SKILL.md`, and the nearest existing screen in the project for structural reference.
 2. Figure out where the screen belongs. The project uses **feature-first** packaging (`<feature>/ui/`) per `android-architecture` and `android-app-skeleton`. If the user named a feature package, put it there; otherwise ask. Don't drop screens into a global `ui/` next to features — that's the layer-first shape we deliberately avoid.
 3. Create these files — the canonical shape:
 

@@ -6,7 +6,7 @@ allowed-tools: Read, Write, Edit, Grep, Glob, Bash, Task, AskUserQuestion, WebFe
 
 # /init-android-app
 
-You are scaffolding a brand-new Android application from scratch. This command is intentionally a **thin orchestrator** — every file template, execution step, hard rule, and post-init checklist lives in `.claude/skills/android-app-skeleton/SKILL.md`. This file owns three things only:
+You are scaffolding a brand-new Android application from scratch. This command is intentionally a **thin orchestrator** — every file template, execution step, hard rule, and post-init checklist lives in `${CLAUDE_PLUGIN_ROOT}/skills/android-app-skeleton/SKILL.md`. This file owns three things only:
 
 1. The Phase 0 questionnaire (skeleton can't ask questions).
 2. The Phase 1.5 version-resolution loop (`maven-metadata.xml` walk).
@@ -39,7 +39,7 @@ Confirm the plan in one short paragraph. Proceed only after confirmation.
 
 ## Phase 1 — Load the blueprint
 
-**Read `.claude/skills/android-app-skeleton/SKILL.md` in full.** It is the procedure spine — placeholders, execution order, hard rules, and post-scaffold checklist. The file templates live in sibling files under `references/` (e.g. `references/root-files.md`, `references/app-module.md`, `references/core-data.md`); each execution-order step in the spine names the reference it needs. Load each reference at its step rather than reading them all up front.
+**Read `${CLAUDE_PLUGIN_ROOT}/skills/android-app-skeleton/SKILL.md` in full.** It is the procedure spine — placeholders, execution order, hard rules, and post-scaffold checklist. The file templates live in sibling files under `references/` (e.g. `references/root-files.md`, `references/app-module.md`, `references/core-data.md`); each execution-order step in the spine names the reference it needs. Load each reference at its step rather than reading them all up front.
 
 ## Phase 1.5 — Resolve all versions online
 
@@ -84,7 +84,7 @@ For each ref, `WebFetch` the URL below and pick the newest version that is **not
 
 ## Phase 2 — Execute the scaffold
 
-Follow the **skeleton skill's "Execution order" section verbatim** (`.claude/skills/android-app-skeleton/SKILL.md` → "Execution order"). Substitute the placeholders from Phase 0 + Phase 1.5. The skill is the source of truth for which files to create, in which order, and with what content; do not duplicate that list here.
+Follow the **skeleton skill's "Execution order" section verbatim** (`${CLAUDE_PLUGIN_ROOT}/skills/android-app-skeleton/SKILL.md` → "Execution order"). Substitute the placeholders from Phase 0 + Phase 1.5. The skill is the source of truth for which files to create, in which order, and with what content; do not duplicate that list here.
 
 When you reach step 9 of the skill (compile + assemble + run unit tests), run **all three** commands — `compileDebugKotlin` alone is not sufficient. The full `assembleDevDebug` is the gate that catches missing Gradle plugins (e.g. the Compose Compiler plugin), unresolved dependencies, and manifest merger errors:
 

@@ -29,7 +29,7 @@ Summarize the final plan in one short paragraph — what will be generated, what
 
 ## Phase 1 — Load the blueprint
 
-Read `.claude/skills/flutter-app-skeleton/SKILL.md` in full. It is the authoritative source for:
+Read `${CLAUDE_PLUGIN_ROOT}/skills/flutter-app-skeleton/SKILL.md` in full. It is the authoritative source for:
 
 - The 11-step execution order
 - Every file template in `lib/`, `test/`, root configs

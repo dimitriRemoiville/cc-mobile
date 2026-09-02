@@ -20,7 +20,7 @@ Upgrade dependencies declared in `gradle/libs.versions.toml`. Resolution is done
    - Skip any version line that has a trailing `# pin: <reason>` comment.
    - Group by area in the output: AndroidX, Kotlin / KSP / Compose compiler, Compose BOM, Hilt, Firebase, testing, other.
 
-4. **Sanity-check against the skeleton's "Compatibility traps" table** (`.claude/skills/android-app-skeleton/SKILL.md` → "Compatibility traps"). If a proposed bump would land in a known trap (e.g. AGP 9 + Hilt < 2.59 / Compose Compiler plugin missing on a Compose module), surface the trap in the diff and pick the next compatible version.
+4. **Sanity-check against the skeleton's "Compatibility traps" table** (`.claude/skills/android-app-skeleton/references/root-files.md` → "Compatibility traps"). If a proposed bump would land in a known trap (e.g. AGP 9 + Hilt < 2.59 / Compose Compiler plugin missing on a Compose module), surface the trap in the diff and pick the next compatible version.
 
 5. **Dry-run (default)**: print the proposed `toml` diff to the user. Stop. Ask: "Apply?"
 

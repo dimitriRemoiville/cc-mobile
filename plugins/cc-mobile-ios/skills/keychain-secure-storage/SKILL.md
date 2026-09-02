@@ -1,170 +1,94 @@
 ---
 name: keychain-secure-storage
-description: Keychain patterns for this iOS project — a small wrapper for tokens/secrets, access control via biometric or passcode, sharing across app group / Keychain groups, keychain-sharing with the iCloud keychain, migration to/from UserDefaults. Load whenever adding auth tokens, passcodes, or any on-device secret.
+description: Project-specific Keychain conventions — the single `KeychainStore` protocol seam, the accessibility policy (`ThisDeviceOnly` by default), biometric gating with `biometryCurrentSet`, access-group sharing, and the in-memory test double. Load whenever adding auth tokens, passcodes, or any on-device secret.
 ---
 
-# Keychain secure storage
+# Keychain (project delta)
 
-## One wrapper, one surface
+For Security-framework fundamentals — `SecItemAdd` / `SecItemCopyMatching` / `SecItemUpdate` query dictionaries, `OSStatus` codes, `SecAccessControlCreateWithFlags` — read [Apple's Keychain Services documentation](https://developer.apple.com/documentation/security/keychain_services). This file documents only this project's decisions. The scaffolded `KeychainStoreLive` template lives in `${CLAUDE_PLUGIN_ROOT}/skills/ios-app-skeleton/references/app-target.md`.
 
-Never scatter `SecItemAdd` / `SecItemCopyMatching` across the codebase. One injected protocol, one concrete type:
+## When this applies
+
+A hand-rolled `KeychainStore` protocol with one concrete implementation. On an existing app:
+
+- **KeychainAccess / Valet / SwiftKeychainWrapper** → keep the library. The accessibility and biometric policy below still applies — check what the library defaults to, because several default to a syncing, non-`ThisDeviceOnly` class.
+- **`SecItem*` called directly from several call sites** → the one-seam argument is worth making, but consolidating is its own change.
+- **Secrets in `UserDefaults` or a plist** → that's a finding, not a style preference. Report it and offer the migration below.
+
+## One protocol, one implementation
+
+**Never call `SecItemAdd` / `SecItemCopyMatching` outside the store.** One protocol in `AppCore`, one concrete type in `App`:
 
 ```swift
-protocol SecureStore: Sendable {
-    func read(_ key: String) throws -> Data?
-    func write(_ key: String, value: Data, accessible: KeychainAccessibility) throws
+public protocol KeychainStore: Sendable {
+    func set(_ value: Data, for key: String) throws
+    func get(_ key: String) throws -> Data?
     func delete(_ key: String) throws
 }
-
-enum KeychainAccessibility {
-    case whenUnlockedThisDeviceOnly
-    case whenPasscodeSetThisDeviceOnly
-    case afterFirstUnlockThisDeviceOnly
-
-    var rawAttr: CFString {
-        switch self {
-        case .whenUnlockedThisDeviceOnly: return kSecAttrAccessibleWhenUnlockedThisDeviceOnly
-        case .whenPasscodeSetThisDeviceOnly: return kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly
-        case .afterFirstUnlockThisDeviceOnly: return kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-        }
-    }
-}
 ```
 
-## Concrete implementation
+The seam is what makes everything above it testable — a view model or repository that touches `SecItem*` directly can only be tested against the real Keychain, which is stateful, entitlement-dependent, and unavailable in `swift test`.
 
-```swift
-struct KeychainStore: SecureStore {
-    private let service: String
+Two implementation details worth pinning down, because both produce silent misbehaviour:
 
-    init(service: String = Bundle.main.bundleIdentifier!) { self.service = service }
+- **`set` must handle the already-exists case.** `SecItemAdd` on an existing item returns `errSecDuplicateItem` and writes nothing. Query first, then `SecItemUpdate` or `SecItemAdd`.
+- **`delete` treats `errSecItemNotFound` as success.** Otherwise sign-out throws on an account that never had a token.
 
-    func write(_ key: String, value: Data, accessible: KeychainAccessibility) throws {
-        let query: [CFString: Any] = [
-            kSecClass: kSecClassGenericPassword,
-            kSecAttrService: service,
-            kSecAttrAccount: key,
-        ]
-        let attrs: [CFString: Any] = [
-            kSecValueData: value,
-            kSecAttrAccessible: accessible.rawAttr,
-        ]
+## Accessibility policy
 
-        let status = SecItemCopyMatching(query as CFDictionary, nil)
-        switch status {
-        case errSecSuccess:
-            let updateStatus = SecItemUpdate(query as CFDictionary, attrs as CFDictionary)
-            if updateStatus != errSecSuccess { throw KeychainError(status: updateStatus) }
-        case errSecItemNotFound:
-            var add = query; add.merge(attrs) { _, new in new }
-            let addStatus = SecItemAdd(add as CFDictionary, nil)
-            if addStatus != errSecSuccess { throw KeychainError(status: addStatus) }
-        default:
-            throw KeychainError(status: status)
-        }
-    }
+**Default to `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`.** Escalate only with a reason:
 
-    func read(_ key: String) throws -> Data? {
-        let query: [CFString: Any] = [
-            kSecClass: kSecClassGenericPassword,
-            kSecAttrService: service,
-            kSecAttrAccount: key,
-            kSecMatchLimit: kSecMatchLimitOne,
-            kSecReturnData: kCFBooleanTrue as Any,
-        ]
-        var out: CFTypeRef?
-        let status = SecItemCopyMatching(query as CFDictionary, &out)
-        switch status {
-        case errSecSuccess: return out as? Data
-        case errSecItemNotFound: return nil
-        default: throw KeychainError(status: status)
-        }
-    }
+| Need | Class |
+|---|---|
+| Normal token, foreground use | `WhenUnlockedThisDeviceOnly` (default) |
+| Background fetch reads it before first unlock | `AfterFirstUnlockThisDeviceOnly` |
+| Requires user presence at every read | `WhenPasscodeSetThisDeviceOnly` + `SecAccessControl` |
 
-    func delete(_ key: String) throws {
-        let query: [CFString: Any] = [
-            kSecClass: kSecClassGenericPassword,
-            kSecAttrService: service,
-            kSecAttrAccount: key,
-        ]
-        let status = SecItemDelete(query as CFDictionary)
-        guard status == errSecSuccess || status == errSecItemNotFound else {
-            throw KeychainError(status: status)
-        }
-    }
-}
+**`ThisDeviceOnly` is not optional.** The non-suffixed classes are included in encrypted backups and can restore onto a different device; `kSecAttrAccessibleAlways` is deprecated outright. The security reviewer treats either as a finding.
 
-struct KeychainError: Error { let status: OSStatus }
-```
+## Biometric gating
 
-## Accessibility
-
-Default to `.whenUnlockedThisDeviceOnly`. Escalate when needed:
-- Background fetch that must read tokens before user unlock -> `.afterFirstUnlockThisDeviceOnly`.
-- User enrolled biometric + requires explicit proof on every read -> `.whenPasscodeSetThisDeviceOnly` + `SecAccessControl` (see below).
-
-**Never** use `kSecAttrAccessibleAlways` or `...WhenUnlocked` (without `ThisDeviceOnly`) — they sync to iCloud Keychain by default and leak to new devices.
-
-## Biometric-gated items
-
-For operations that need user presence (unlock vault, submit payment):
+For actions needing user presence — unlocking a vault, authorising a payment:
 
 ```swift
 let access = SecAccessControlCreateWithFlags(
     nil,
     kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly,
-    [.userPresence], // or .biometryCurrentSet for stronger enrollment binding
+    [.biometryCurrentSet],
     nil
 )!
-let attrs: [CFString: Any] = [
-    kSecValueData: tokenData,
-    kSecAttrAccessControl: access,
-]
 ```
 
-Reads will prompt for Face ID / Touch ID / passcode on demand.
+**Use `.biometryCurrentSet`, not `.userPresence` or `.biometryAny`, for anything that authorises value.** `biometryCurrentSet` invalidates the item when a new face or fingerprint is enrolled — which is exactly the attack where someone with the device passcode adds their own biometric. `.userPresence` also falls back to the passcode, defeating the point.
 
-## App groups & Keychain sharing
+Reading such an item presents the system prompt on its own; you don't need `LAContext` unless you want to pre-authenticate before showing UI.
 
-For a Widget / Share extension reading the same secrets:
+## Sharing across extensions
 
-1. Add a Keychain sharing entitlement with a group id (`$(AppIdentifierPrefix)com.example.app`).
-2. Pass the shared group via `kSecAttrAccessGroup` in every query.
-3. Do not share secrets across unrelated apps.
+A widget or share extension reading the same secrets needs a Keychain-sharing entitlement with a group id (`$(AppIdentifierPrefix)com.example.app`) and `kSecAttrAccessGroup` in **every** query — including deletes, or sign-out leaves the extension holding a live token.
 
-## Migration from UserDefaults
+## Migrating off UserDefaults
+
+Write to the Keychain, remove the old key, ship one release, then delete both the migration and the fallback read:
 
 ```swift
-func migrateTokenFromDefaultsIfNeeded(store: SecureStore) throws {
-    guard let token = UserDefaults.standard.string(forKey: "auth_token"),
-          let data = token.data(using: .utf8) else { return }
-    try store.write("auth_token", value: data, accessible: .whenUnlockedThisDeviceOnly)
+func migrateTokenIfNeeded(store: KeychainStore) throws {
+    guard let token = UserDefaults.standard.string(forKey: "auth_token") else { return }
+    try store.set(Data(token.utf8), for: "auth_token")
     UserDefaults.standard.removeObject(forKey: "auth_token")
 }
 ```
 
-Ship for one release cycle, delete both the migration and the `UserDefaults` leftovers in the next.
+Leaving the migration in forever means the insecure read path stays in the binary forever.
 
 ## Testing
 
-Inject `SecureStore`. Tests use an in-memory fake:
-
-```swift
-final class InMemorySecureStore: SecureStore, @unchecked Sendable {
-    private var storage: [String: Data] = [:]
-    private let lock = NSLock()
-    func read(_ key: String) -> Data? { lock.lock(); defer { lock.unlock() }; return storage[key] }
-    func write(_ key: String, value: Data, accessible: KeychainAccessibility) { lock.lock(); defer { lock.unlock() }; storage[key] = value }
-    func delete(_ key: String) { lock.lock(); defer { lock.unlock() }; storage.removeValue(forKey: key) }
-}
-```
-
-Never hit the real Keychain in unit tests. Integration tests on a simulator are fine for the wrapper itself.
+Inject the protocol; use an in-memory double. **Never touch the real Keychain in unit tests** — it needs entitlements, persists across runs, and isn't available under `swift test`. Integration tests on a simulator are fine for the concrete store itself.
 
 ## Hard nos
 
-- No storing secrets in `UserDefaults`, plist, or a local file.
-- No logging token values, even in debug.
-- No `kSecAttrAccessibleAlways*` or the non-`ThisDeviceOnly` variants.
-- No hard-coded secrets in the binary. Ship them from a server on first auth.
-- No reading Keychain from a `didFinishLaunching` before the app is unlocked — the call fails silently unless `afterFirstUnlock*` is set.
+- **No secrets in `UserDefaults`, a plist, or a file** — the whole reason this skill exists.
+- **No logging a token value**, including in DEBUG. See the logging rules in `swift-style`.
+- **No `kSecAttrAccessibleAlways*`** and no non-`ThisDeviceOnly` class.
+- **No hard-coded secrets in the binary.** Client-side secrets always leak; fetch them after auth or proxy through your backend.
+- **No Keychain read in `didFinishLaunching`** before first unlock unless the item is `AfterFirstUnlock*` — it fails silently and the app looks logged out.

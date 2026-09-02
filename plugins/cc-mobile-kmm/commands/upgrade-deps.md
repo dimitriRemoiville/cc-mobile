@@ -12,7 +12,7 @@ Upgrade dependencies declared in `gradle/libs.versions.toml` (the Gradle side �
 
 1. Locate `gradle/libs.versions.toml`. Bail if it doesn't exist (this command requires a version catalog; hand off to `kmm-build-expert` if the project predates one).
 
-2. **Resolve the latest stable for each `[versions]` ref by `WebFetch`-ing its `maven-metadata.xml`** (reuse the URL table from `.claude/commands/init-kmm-app.md` Phase 1.5 if present; otherwise the canonical sources are):
+2. **Resolve the latest stable for each `[versions]` ref by `WebFetch`-ing its `maven-metadata.xml`** (reuse the URL table from `${CLAUDE_PLUGIN_ROOT}/commands/init-kmm-app.md` Phase 1.5 if present; otherwise the canonical sources are):
    - **Kotlin / KSP / coroutines / serialization / kotlin-test:** Maven Central, e.g. `https://repo1.maven.org/maven2/org/jetbrains/kotlin/kotlin-stdlib/maven-metadata.xml`.
    - **AGP:** `https://dl.google.com/dl/android/maven2/com/android/tools/build/gradle/maven-metadata.xml`.
    - **AndroidX (`:androidApp` side):** `https://dl.google.com/dl/android/maven2/androidx/<group>/<artifact>/maven-metadata.xml`.
@@ -31,7 +31,7 @@ Upgrade dependencies declared in `gradle/libs.versions.toml` (the Gradle side �
    - Skip any version line that has a trailing `# pin: <reason>` comment.
    - Group by area in the output: Kotlin / KSP / coroutines / serialization, AGP + AndroidX, Compose Multiplatform, Ktor, SQLDelight, Koin, multiplatform-settings, testing, other.
 
-4. **Sanity-check against the skeleton's "Compatibility traps" table** (`.claude/skills/kmm-app-skeleton/SKILL.md` → "Compatibility traps" if it exists). KMP-specific bundles that move together:
+4. **Sanity-check against the skeleton's "Compatibility traps" table** (`${CLAUDE_PLUGIN_ROOT}/skills/kmm-app-skeleton/SKILL.md` → "Compatibility traps" if it exists). KMP-specific bundles that move together:
    - **Kotlin + KSP + Compose Multiplatform + coroutines + serialization** — bumping Kotlin almost always requires bumping KSP (matching `<kotlin>-1.0.<n>`) and Compose Multiplatform's Kotlin compatibility. Bundle these or refuse.
    - **Ktor + kotlinx-coroutines + kotlinx-serialization** — Ktor's published version is built against specific versions of both; mismatches surface at iOS link time, not at JVM test time.
    - **SQLDelight major bumps** — sometimes require regenerating `.sq` code-gen output and adjusting type-converter signatures. Warn the user.

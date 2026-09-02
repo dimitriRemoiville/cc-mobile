@@ -1,18 +1,27 @@
 ---
 name: ios-accessibility
-description: iOS accessibility patterns — accessibility labels/hints/values/traits, Dynamic Type, VoiceOver, Reduce Motion, high contrast, RTL mirroring. Load whenever adding or reviewing a SwiftUI screen.
+description: Accessibility conventions for this iOS project — the per-screen baseline, the grouping rule for custom rows, Dynamic Type at accessibility sizes, Reduce Motion, and the VoiceOver review pass. Load when auditing a screen for accessibility, adding semantic annotations, or reviewing a SwiftUI view for VoiceOver and tap-target correctness.
 ---
 
-# iOS accessibility
+# iOS accessibility (project delta)
 
-## Baseline
+For the API surface — every `accessibility*` modifier, trait, rotor, and custom action — read [Apple's SwiftUI accessibility documentation](https://developer.apple.com/documentation/swiftui/accessibility-fundamentals) and the [Accessibility section of the HIG](https://developer.apple.com/design/human-interface-guidelines/accessibility). This file documents what this project requires and what its reviews actually flag.
 
-Every interactive element has:
-- **Accessibility label** — a short noun-phrase or verb-phrase (not decorative text).
-- **Trait** reflecting the actual role (`.isButton`, `.isHeader`, `.isToggle`).
-- **Tap area** of at least **44pt x 44pt** (`.contentShape(Rectangle())` + `.frame(minWidth: 44, minHeight: 44)` on tight layouts).
+## When this applies
 
-SwiftUI infers a lot of this, but custom controls don't.
+SwiftUI accessibility (`accessibilityLabel`, traits, `accessibilityElement`). On an existing app:
+
+- **UIKit** → the principles transfer exactly (labels, traits, 44pt targets, Dynamic Type) but the API is `isAccessibilityElement`, `accessibilityLabel`, `accessibilityTraits`, `UIFontMetrics`. Don't push SwiftUI modifiers.
+- **Mixed UIKit + SwiftUI** → apply this skill to the SwiftUI surfaces only.
+
+## The baseline
+
+Before a screen is considered done:
+
+1. **Every interactive element has a label** that says what it does, not what it looks like.
+2. **Traits match the actual role** — `.isButton`, `.isHeader`, `.isToggle`. SwiftUI infers these for its own controls; a `VStack` with `.onTapGesture` gets nothing and must be told.
+3. **Tap targets are ≥ 44×44pt.** `.frame(minWidth: 44, minHeight: 44)` plus `.contentShape(Rectangle())` on tight layouts — without `contentShape`, the padding isn't tappable.
+4. **Text uses semantic styles** (`.body`, `.headline`, `.footnote`), never a fixed `.system(size:)`.
 
 ## Labels
 
@@ -21,111 +30,70 @@ Image(systemName: "trash")
     .accessibilityLabel("Delete")
     .accessibilityHint("Removes the selected order")
 
-// Decorative image:
-Image("splash-illustration").accessibilityHidden(true)
+Image("splash-illustration").accessibilityHidden(true)   // decorative
 ```
 
-- No "image of" / "button that" in labels. VoiceOver already announces the trait.
-- Hints describe the action's consequence, not how to trigger it.
+- **No "image of" or "button that"** in a label — VoiceOver announces the trait already.
+- **Hints describe the consequence**, not the gesture. "Removes the selected order", not "Double-tap to delete".
+- **`.accessibilityLabel("")` is never the answer** for a decorative element; `.accessibilityHidden(true)` is.
 
-## Grouping
+## Grouping custom rows
 
-VoiceOver reads each subview separately by default. For cards / rows, collapse:
+The single most common finding in this codebase. VoiceOver reads each subview separately, so a card built from an image, two labels, and an icon becomes four stops with no indication it's one tappable thing:
 
 ```swift
-HStack {
-    AsyncImage(url: episode.artwork)
-    VStack { Text(episode.title); Text(episode.duration) }
-    Image(systemName: "play.fill").accessibilityHidden(true)
-}
-.contentShape(Rectangle())
-.onTapGesture { play(episode) }
-.accessibilityElement(children: .combine)
-.accessibilityLabel("Play \(episode.title), \(episode.duration)")
-.accessibilityAddTraits(.isButton)
+HStack { /* artwork, title, duration, play icon */ }
+    .contentShape(Rectangle())
+    .onTapGesture { play(episode) }
+    .accessibilityElement(children: .combine)
+    .accessibilityLabel("Play \(episode.title), \(episode.duration)")
+    .accessibilityAddTraits(.isButton)
 ```
 
-- `.accessibilityElement(children: .combine)` merges children, keeping their labels joined.
-- `.accessibilityElement(children: .ignore)` takes full control; you supply one label.
+`.combine` merges children and keeps their labels joined; `.ignore` takes full control and requires you to supply the whole label. Custom-drawn controls need `.ignore` plus an explicit trait.
 
 ## Dynamic Type
 
-- Prefer system text styles (`.body`, `.headline`, `.footnote`) via `Font.body`.
-- Layouts must survive `accessibilityExtraExtraExtraLarge`. Test in previews:
+**Layouts must survive `.accessibility3` and above** — that's where fixed-height rows clip and side-by-side layouts collide. Preview it rather than guessing:
 
 ```swift
-#Preview("Large font") {
-    OrderRow(order: .sample)
-        .environment(\.dynamicTypeSize, .accessibility3)
+#Preview("AX3") {
+    OrderRow(order: .sample).environment(\.dynamicTypeSize, .accessibility3)
 }
 ```
 
-- Custom fonts: `Font.custom("YourFont", size: UIFontMetrics.default.scaledValue(for: 16))` to opt into scaling, or better, use `Font.system(.body, design: .rounded)`.
-- No fixed-width containers around scalable text. Use `.frame(maxWidth: .infinity, alignment: .leading)` and let the text wrap.
+- No fixed-width or fixed-height container around scalable text. `.frame(maxWidth: .infinity, alignment: .leading)` and let it wrap.
+- Custom fonts opt into scaling via `UIFontMetrics` or `Font.custom(_:size:relativeTo:)` — plain `Font.custom(_:size:)` does not scale.
+- Consider `@Environment(\.dynamicTypeSize)` to switch an `HStack` to a `VStack` past `.accessibility1`, rather than letting it squeeze.
 
 ## Reduce Motion
 
-Honor the user preference for screen transitions:
-
 ```swift
 @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
+// ...
 .animation(reduceMotion ? nil : .spring(), value: isOpen)
 ```
 
-For parallax / auto-play / looping animations: pause or disable entirely when `reduceMotion` is on.
+Parallax, auto-play, and looping animations are **disabled**, not shortened, when Reduce Motion is on.
 
-## High contrast & color
+## Colour
 
-```swift
-@Environment(\.colorSchemeContrast) private var contrast
+Never encode status in colour alone — pair it with an icon, a label, or a shape. Body text meets 4.5:1 contrast, large text 3:1. `@Environment(\.colorSchemeContrast)` for the increased-contrast palette.
 
-Text(status.label)
-    .foregroundStyle(contrast == .increased ? Color.accessibleAccent : Color.accent)
-```
+## The VoiceOver pass
 
-- Always pair color with another channel (icon, label, shape). Color-only status is invisible to many users.
-- Validate text contrast at WCAG AA (4.5:1 for body, 3:1 for large). Xcode's preview contrast inspector is your friend.
+Run this on every new screen; it takes about a minute:
 
-## VoiceOver testing checklist
-
-1. Swipe right through every screen; every interactive element receives focus in the expected reading order.
-2. Double-tap any element; the right action fires.
-3. Rotor gestures (headings, landmarks) work on screens with a clear heading hierarchy.
-4. Announcements after navigation are the screen's title + first meaningful element.
-
-For UI tests:
-
-```swift
-let row = app.cells.element(matching: .init(format: "label CONTAINS[c] %@", "Order #1"))
-row.tap()
-XCTAssertTrue(app.navigationBars["Order #1"].exists)
-```
-
-## RTL mirroring
-
-- Use `.leading` / `.trailing` in alignment & edges, never `.left` / `.right`.
-- For images that encode direction (arrows, chevrons), use SF Symbols (auto-mirrored) or specify `.flipsForRightToLeftLayoutDirection(true)`.
-- Preview mirrored layouts:
-
-```swift
-#Preview { OrderRow(order: .sample).environment(\.layoutDirection, .rightToLeft) }
-```
-
-## Announcements
-
-For form-validation or async errors:
-
-```swift
-UIAccessibility.post(notification: .announcement, argument: "Card declined. Check your billing details.")
-```
-
-Or put the error in a visible `Text` with `.accessibilityAddTraits(.updatesFrequently)` so VoiceOver re-reads.
+1. Swipe right through the screen — every interactive element gets focus, in reading order, with no orphaned fragments.
+2. Double-tap each one — the intended action fires.
+3. Rotor by heading — the screen's structure is navigable.
+4. After a navigation, the announcement is the new screen's title, not a stale fragment.
+5. Errors and async results are announced — a visible `Text` the user never hears about is not an error message.
 
 ## Hard nos
 
-- No `.accessibilityHidden(true)` on something with interactive behavior.
-- No hard-coded `.font(.system(size: 17))` outside design-system token generation.
-- No relying on color alone for status (green/red without icons or labels).
-- No `.accessibilityLabel("")` — use `.accessibilityHidden(true)`.
-- No skipping Dynamic Type testing at the largest size.
+- **No `.accessibilityHidden(true)` on anything interactive.**
+- **No fixed `.font(.system(size:))`** outside design-token generation.
+- **No colour-only status.**
+- **No untested largest Dynamic Type size** on a new screen.
+- **No custom control without an explicit trait** — a tappable `VStack` that VoiceOver calls out as plain text is unusable.

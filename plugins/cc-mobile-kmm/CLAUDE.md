@@ -87,7 +87,7 @@ Dependency direction inside `shared/`: `presentation → domain ← data`. Domai
 
 **iOS interop**
 - Keep the public API of `commonMain` **Swift-friendly**: avoid `inline` functions, default arguments on public APIs (they don't translate cleanly), sealed classes with generic bounds beyond a single level, and internal-only types leaking.
-- Types crossing into Swift should be `data class` / `sealed class` / plain interfaces. See `.claude/skills/kmm-ios-interop/SKILL.md` for the full list.
+- Types crossing into Swift should be `data class` / `sealed class` / plain interfaces. See `${CLAUDE_PLUGIN_ROOT}/skills/kmm-ios-interop/SKILL.md` for the full list.
 
 ## Build
 
@@ -107,7 +107,7 @@ Dependency direction inside `shared/`: `presentation → domain ← data`. Domai
 
 ## Specialist agents
 
-Use the `Task` tool with these subagents for focused work (see `.claude/agents/`):
+Use the `Task` tool with these subagents for focused work (see `${CLAUDE_PLUGIN_ROOT}/agents/`):
 
 - `kmm-architect` — module boundaries, source-set decisions, `expect`/`actual` vs. interface-injection trade-offs.
 - `kmm-engineer` — building repositories, use cases, ViewModels in `commonMain`.
@@ -120,7 +120,7 @@ Use the `Task` tool with these subagents for focused work (see `.claude/agents/`
 
 ## Useful slash commands
 
-See `.claude/commands/`:
+See `${CLAUDE_PLUGIN_ROOT}/commands/`:
 
 - `/init-kmm-app` — scaffold a brand-new KMM project from scratch (`:shared` with commonMain/androidMain/iosMain, `:androidApp` Compose, `iosApp/` SwiftUI, Ktor Client, Koin, optional SQLDelight). Resolves all Maven + GitHub-Releases versions online before writing files.
 - `/new-feature` — scaffold a full feature in `shared/` (data + domain + presentation ViewModel).

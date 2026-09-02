@@ -1,124 +1,68 @@
 ---
 name: hilt-di
-description: How Hilt is wired up and used in this project. Load when adding a new injectable, creating a Hilt module, setting up a new ViewModel, wiring a repository, writing Hilt-aware tests, or debugging a DI error.
+description: Project-specific Hilt conventions — feature-first module locations, `hiltViewModel()`-in-Route-only rule, KSP-only compiler, single shared `OkHttpClient` between Retrofit and Coil, and the test-time `@BindValue` shortcut. Load when adding a new injectable, creating a Hilt module, setting up a new ViewModel, wiring a repository, writing Hilt-aware tests, or debugging a DI error.
 ---
 
-# Hilt dependency injection
+# Hilt (project delta)
 
-## Setup (reference)
+For Hilt fundamentals — `@HiltAndroidApp`, `@AndroidEntryPoint`, `@HiltViewModel`, component scopes, `@Provides` vs `@Binds`, qualifiers, `Provider<T>` / `Lazy<T>` — read the [official Hilt guide](https://developer.android.com/training/dependency-injection/hilt-android). The canonical `NetworkModule` / `PersistenceModule` / `DataStoreModule` / `AnalyticsModule` templates live in `${CLAUDE_PLUGIN_ROOT}/skills/android-app-skeleton/references/core-data.md` (and the optional-room / optional-datastore references). This file documents only the project's specific decisions.
 
-- `Application` class annotated with `@HiltAndroidApp`.
-- Every `Activity` / `Fragment` that injects: `@AndroidEntryPoint`.
-- Every ViewModel: `@HiltViewModel`, constructor-injected, retrieved via `hiltViewModel()` in the Route composable.
-- Hilt plugin in `libs.versions.toml` and applied on every module that participates.
-- Use **KSP** for the Hilt compiler (`ksp(libs.hilt.compiler)`).
+## When this applies
 
-## Where modules live
+Hilt with KSP. On an existing app:
 
-Co-locate modules with the implementations they bind. The project is **feature-first**, so feature-owned modules live next to the implementations they wire; cross-cutting plumbing lives under `core/`:
+- **Koin** (`org.koin.*`, `koinViewModel(...)`, `module { ... }`) → skip this skill entirely; Koin's runtime DSL is incompatible with Hilt's compile-time graph. Apply only stack-agnostic principles (constructor injection, no service locator).
+- **Plain Dagger 2** (no `@HiltAndroidApp`, manual `@Component`) → many idioms transfer, but Hilt's component hierarchy and `@HiltViewModel` shortcut don't exist. Don't push Hilt-specific patterns.
+- **Manual constructor wiring / no DI framework** → don't refactor unless asked.
+- **kapt instead of KSP** → it works; flag the build-time cost only when discussing the build, not as a correctness issue.
+
+## Project rules
+
+- **KSP-only.** `ksp(libs.hilt.compiler)`. The reviewer rejects `kapt(libs.hilt.compiler)` and any `kapt` plugin in `app/build.gradle.kts`.
+- **`hiltViewModel()` is called only in the Route composable.** Never in child composables, never passed down the tree. The Route owns the VM; the Screen takes state + callbacks. See `compose-ui` for the Route/Screen split.
+- **Default to `SingletonComponent`.** Reach for `ViewModelComponent` / `ActivityRetainedComponent` only when you have a concrete reason (short-lived helpers, things that must die with the ViewModel).
+- **One shared `OkHttpClient`** between Retrofit and Coil. Coil's network fetcher reuses it via `{{APP_CLASS}}.newImageLoader`. **Don't `@Provides` a second `OkHttpClient`** for images.
+
+## Where modules live (feature-first)
+
+Co-locate modules with the implementations they bind:
 
 ```
-<feature>/data/di/<Feature>DataModule.kt   # provides <Feature>Api, binds <Feature>RepositoryImpl
-core/data/network/di/NetworkModule.kt      # provides OkHttp, Json, Retrofit, SampleApi
-core/di/DispatcherModule.kt                # provides Dispatchers (cross-cutting, not data-layer)
+<feature>/data/di/<Feature>DataModule.kt   # binds <Feature>RepositoryImpl, feature-specific APIs
+core/data/network/di/NetworkModule.kt      # OkHttp, Json, Retrofit, SampleApi
+core/data/analytics/AnalyticsModule.kt     # @Binds AnalyticsTracker → Noop or Firebase impl
+core/data/persistence/di/PersistenceModule.kt   # INCLUDE_ROOM: AppDatabase, DAOs
+core/data/datastore/di/DataStoreModule.kt       # INCLUDE_DATASTORE: AppPreferences
+core/di/DispatcherModule.kt                # cross-cutting: dispatchers, clocks, IDs
 ```
 
-`core/data/network/di/` is correct because the network providers belong to the data layer's networking subpackage. Reach for `core/di/` only for things that don't belong to a layer (dispatchers, clocks, IDs). Avoid a single `AppModule` that knows about everything.
+`core/data/network/di/` is correct because network providers belong to the data layer's networking subpackage. Reach for `core/di/` only for things that don't belong to a single layer. **Avoid a single `AppModule` that knows about everything.**
 
-## `@Provides` vs `@Binds`
+## Testing — `@BindValue` over test modules
 
-- **`@Binds`** when you're mapping an interface to an implementation whose constructor has `@Inject`. Declare as an abstract function in an abstract class / interface module. Zero runtime cost.
-- **`@Provides`** when you need to construct the object yourself (e.g., configure a Retrofit instance).
+**Unit tests don't involve Hilt.** Construct the class manually and pass fakes / mocks to the constructor. The scaffold's `FeedViewModelTest` (in `${CLAUDE_PLUGIN_ROOT}/skills/android-app-skeleton/references/tests.md`) is the canonical example.
+
+**Hilt-aware integration / Compose tests** use the Hilt test rule **and `@BindValue`** to swap one binding per test:
 
 ```kotlin
-@Module
-@InstallIn(SingletonComponent::class)
-abstract class OrderDataModule {
-    @Binds @Singleton
-    abstract fun bindOrderRepository(impl: OrderRepositoryImpl): OrderRepository
-}
+@HiltAndroidTest
+class FeedScreenTest {
+    @get:Rule(order = 0) val hiltRule = HiltAndroidRule(this)
+    @get:Rule(order = 1) val composeRule = createAndroidComposeRule<HiltTestActivity>()
 
-@Module
-@InstallIn(SingletonComponent::class)
-object NetworkModule {
-    @Provides @Singleton
-    fun provideOkHttp(): OkHttpClient = OkHttpClient.Builder()
-        .addInterceptor(HttpLoggingInterceptor())
-        .build()
+    @BindValue @JvmField
+    val analytics: AnalyticsTracker = NoopAnalyticsTracker()
 
-    @Provides @Singleton
-    fun provideJson(): Json = Json {
-        ignoreUnknownKeys = true
-        explicitNulls = false
-    }
-
-    @Provides @Singleton
-    fun provideRetrofit(ok: OkHttpClient, json: Json): Retrofit = Retrofit.Builder()
-        .baseUrl(BuildConfig.API_BASE_URL)
-        .client(ok)
-        .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
-        .build()
-
-    @Provides @Singleton
-    fun provideOrderApi(retrofit: Retrofit): OrderApi = retrofit.create()
+    @Before fun setup() { hiltRule.inject() }
 }
 ```
 
-The `Json` instance is provided alongside the others so `provideRetrofit`'s `json` parameter actually resolves — see `retrofit-networking` for the full Retrofit + kotlinx.serialization wiring.
+`@BindValue` is **far simpler than writing a `@TestInstallIn` test module** for one-off replacements. Use it for `AnalyticsTracker`, fake repositories, and any other singleton you want to control per-test. The custom `CustomTestRunner` + `HiltTestApplication` are set up by the scaffold's `app/build.gradle.kts`.
 
-## Components (scopes) to know
+## Common error pointers (project-specific only)
 
-- `SingletonComponent` — app lifetime. Use for repositories, Retrofit, Room.
-- `ViewModelComponent` — one per ViewModel. Use for ViewModel-scoped helpers.
-- `ActivityRetainedComponent` — survives config changes, one per activity.
-- `ActivityComponent`, `FragmentComponent`, `ViewComponent` — usually not needed day-to-day.
+- **"No binding found for X" on a third-party type** (e.g. `OkHttpClient`, `Json`) — it lives in `core/data/network/di/NetworkModule.kt`. Don't `@Provides` it locally.
+- **ViewModel fails to inject in a composable** — most common cause is `viewModel()` instead of `hiltViewModel()` in the Route. Second most common: missing `@AndroidEntryPoint` on the host Activity.
+- **AGP 9 + Hilt version mismatch** (`Cannot add extension with name 'kotlin'` / `Could not find AGP base extension`) — see `${CLAUDE_PLUGIN_ROOT}/skills/android-app-skeleton/references/root-files.md` → "Compatibility traps."
 
-Default to `SingletonComponent` unless you know you need something narrower.
-
-## Qualifiers
-
-When you have multiple instances of the same type, disambiguate:
-
-```kotlin
-@Qualifier annotation class IoDispatcher
-@Qualifier annotation class DefaultDispatcher
-
-@Module @InstallIn(SingletonComponent::class)
-object DispatcherModule {
-    @Provides @IoDispatcher fun provideIo(): CoroutineDispatcher = Dispatchers.IO
-    @Provides @DefaultDispatcher fun provideDefault(): CoroutineDispatcher = Dispatchers.Default
-}
-
-class Repo @Inject constructor(
-    @IoDispatcher private val io: CoroutineDispatcher,
-)
-```
-
-## ViewModels
-
-```kotlin
-@HiltViewModel
-class OrderViewModel @Inject constructor(
-    private val submit: SubmitOrderUseCase,
-    savedStateHandle: SavedStateHandle,
-) : ViewModel()
-```
-
-- Retrieve with `val vm: OrderViewModel = hiltViewModel()` only in the Route composable.
-- Never pass a ViewModel down to child composables. Pass state + callbacks.
-
-## Testing with Hilt
-
-- Use `@HiltAndroidTest` on the test class.
-- `@get:Rule val hiltRule = HiltAndroidRule(this)` at the top, call `hiltRule.inject()` in `@Before`.
-- Custom test application: `HiltTestApplication`, registered via a `CustomTestRunner`.
-- Replace bindings per-test with `@BindValue` — much simpler than writing a whole test module for one-off swaps.
-
-For **unit tests**, don't involve Hilt at all. Construct the class manually, pass fakes/mocks to the constructor. Hilt tests are for integration/Compose tests.
-
-## Common errors and fixes
-
-- **"No binding found for ..."** → the type isn't provided. Check if the implementation has `@Inject` constructor, or add a `@Provides` / `@Binds`.
-- **"Found a dependency cycle"** → two classes `@Inject` each other directly or transitively. Extract an interface or break the cycle with a `Provider<T>`.
-- **"...is already bound"** → duplicate binding, often because two modules both `@Provides` the same type. Remove one.
-- **ViewModel fails to inject** → missing `@HiltViewModel`, or Activity missing `@AndroidEntryPoint`, or retrieving it with `viewModel()` instead of `hiltViewModel()`.
+For generic Hilt error messages ("Found a dependency cycle", "X is already bound"), the [official guide's troubleshooting section](https://developer.android.com/training/dependency-injection/hilt-android) is more thorough than restating it here.

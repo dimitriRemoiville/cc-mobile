@@ -139,6 +139,21 @@ JSON"
     find "$plugin_dir/hooks" -name '*.sh' -exec chmod +x {} \;
   fi
 
+  # 4b. Rewrite config-root paths for the plugin runtime.
+  #
+  # Source files say `.claude/skills/foo/SKILL.md` because a stack folder is
+  # also usable by dropping its `.claude/` into a project root (README option
+  # C), where that path is literally correct. Once installed as a plugin there
+  # is no `.claude/` — the tree lives wherever Claude Code unpacked it, exposed
+  # as ${CLAUDE_PLUGIN_ROOT}. Rewriting at package time keeps both modes right
+  # from one source.
+  #
+  # Only the four config subdirectories are rewritten, so prose like "copy
+  # `.claude/` into your project" survives untouched. hooks.json is skipped —
+  # it already ships the `${CLAUDE_PLUGIN_ROOT:-.claude}` shell form, which
+  # resolves correctly in both modes on its own.
+  rewrite_plugin_root "$plugin_dir"
+
   # 5. settings.json is intentionally NOT shipped — it's Claude Code user config,
   #    not plugin config. Surface a warning if someone put one in.
   if [[ -f "$plugin_dir/settings.json" ]]; then
@@ -176,6 +191,29 @@ JSON"
 
   info "wrote $plugin_zip"
   echo
+}
+
+rewrite_plugin_root() {
+  local plugin_dir="$1"
+  local -a targets=()
+
+  for d in skills agents commands; do
+    [[ -d "$plugin_dir/$d" ]] && targets+=("$plugin_dir/$d")
+  done
+  [[ -f "$plugin_dir/CLAUDE.md" ]] && targets+=("$plugin_dir/CLAUDE.md")
+  [[ ${#targets[@]} -eq 0 ]] && return 0
+
+  # Anchored on the opening backtick: every such reference in the source tree
+  # is written as an inline-code path, so this can't touch prose.
+  local pattern='`\.claude/(skills|agents|commands|hooks)/'
+  local count=0
+  while IFS= read -r -d '' f; do
+    grep -Eq "$pattern" "$f" || continue
+    sed -i '' -E 's#`\.claude/(skills|agents|commands|hooks)/#`${CLAUDE_PLUGIN_ROOT}/\1/#g' "$f"
+    count=$((count + 1))
+  done < <(find "${targets[@]}" -type f -name '*.md' -print0)
+
+  info "rewrote .claude/ → \${CLAUDE_PLUGIN_ROOT}/ in $count file(s)"
 }
 
 validate_plugin() {

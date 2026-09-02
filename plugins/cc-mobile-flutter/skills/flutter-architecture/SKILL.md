@@ -62,7 +62,7 @@ abstract interface class ActivityRepository {
 }
 ```
 
-Implementation rules (see `.claude/skills/dio-networking/SKILL.md` for the detailed mapping):
+Implementation rules (see `${CLAUDE_PLUGIN_ROOT}/skills/dio-networking/SKILL.md` for the detailed mapping):
 
 ```dart
 // data/repositories/activity_repository_impl.dart

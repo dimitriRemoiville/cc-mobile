@@ -1,127 +1,84 @@
 ---
 name: ios-testing
-description: Testing patterns used in this project — Swift Testing (@Test / #expect) for unit and integration, async tests with Swift Concurrency, hand-rolled fakes, and XCTest for UI automation. Load when writing, updating, or debugging tests of any kind.
+description: Project-specific testing conventions on top of Swift Testing + XCTest UI automation — `Outcome` in stub returns, the `@MainActor` view-model suite shape, the full-state-sequence assertion rule, hand-rolled stubs vs fakes, and the `URLProtocol` network seam. Load when writing, updating, or debugging tests of any kind.
 ---
 
-# Testing playbook (iOS)
+# Testing (project delta)
 
-## Frameworks
+For testing fundamentals — `@Test` / `@Suite` / `#expect` / `#require` semantics, parameterised tests, traits, `XCUIApplication` querying — read [Apple's Swift Testing documentation](https://developer.apple.com/documentation/testing) and the [XCTest UI testing guide](https://developer.apple.com/documentation/xctest/user_interface_tests). This file documents only this project's conventions. The scaffolded seed suites live in `${CLAUDE_PLUGIN_ROOT}/skills/ios-app-skeleton/references/tests.md`.
 
-- **Unit / integration:** **Swift Testing** (`import Testing`, `@Test`, `@Suite`, `#expect`, `#require`). Apple's modern framework — use it for new test targets.
-- **UI / E2E:** **XCTest** (`XCUIApplication`). Swift Testing doesn't yet cover UI automation.
-- **Async:** Native Swift Concurrency — `async` test functions, `await`, no `XCTestExpectation` needed for new code.
-- **Fakes / Mocks:** hand-rolled. Protocols + `Mock…` / `Stub…` / `Fake…` types. Mocking libraries exist but aren't idiomatic in Swift.
+## When this applies
 
-## Where tests live
+**Swift Testing** for unit and integration, **XCTest** for UI automation, hand-rolled test doubles. On an existing app:
 
-```
-Tests/               # Swift Testing unit + integration tests
-UITests/             # XCTest UI automation
-```
+- **XCTest-only** (no `import Testing`, or an Xcode < 16 floor) → keep it. Write new tests in XCTest to match; the assertions differ, every rule below still applies.
+- **Quick / Nimble** (`describe`, `it`, `expect(...).to(...)`) → keep the BDD style for that target rather than mixing two vocabularies in one file.
+- **A mocking library** (Cuckoo, Mockingbird, generated mocks) → keep it. Don't hand-roll new doubles alongside generated ones.
+- **Snapshot tests** (`swift-snapshot-testing`) → complementary, not a substitute for the view-model tests below. Note the recorded-reference maintenance cost when it's relevant.
 
-## Use case tests (pure Swift)
+## Two frameworks, split by kind
 
-```swift
-import Testing
-@testable import App
+| Kind | Framework | Where |
+|---|---|---|
+| Domain, use cases, mappers, repositories | Swift Testing | `Tests/AppCoreTests/` |
+| View models | Swift Testing, `@MainActor` suite | `Tests/AppFeaturesTests/` |
+| UI / E2E | XCTest + `XCUIApplication` | `UITests/` |
 
-@Suite("SubmitOrderUseCase")
-struct SubmitOrderUseCaseTests {
-    @Test("returns order when repository accepts the submission")
-    func returnsOrderOnSuccess() async throws {
-        let orders = StubOrderRepository(result: .success(.sample))
-        let submit = SubmitOrderUseCase(orders: orders, now: { .distantPast })
+Swift Testing doesn't cover UI automation, so UI tests stay XCTest. That's the only reason to write a new `XCTestCase`.
 
-        let order = try await submit(.sample)
+## `Outcome` in test doubles
 
-        #expect(order.id == Order.sample.id)
-    }
-
-    @Test("throws network when repository fails")
-    func throwsNetworkOnFailure() async {
-        let orders = StubOrderRepository(result: .failure(DomainError.network(code: 500)))
-        let submit = SubmitOrderUseCase(orders: orders, now: { .distantPast })
-
-        await #expect(throws: DomainError.self) {
-            _ = try await submit(.sample)
-        }
-    }
-}
-```
-
-Notes:
-- `@Suite("Name")` groups related tests.
-- `@Test` takes an optional description; the function name is the fallback.
-- `#expect(condition)` for soft assertions; `#require(condition)` when continuing would be pointless if the check fails.
-
-## View model tests
-
-View models are `@MainActor`, so suites need to hop to the main actor:
+Repository and use-case doubles return `Outcome.success(...)` / `.failure(DomainError.x)` — **not** `Result`, not a thrown error, unless the real signature throws. Matching the production signature is what makes the test exercise the real mapping path.
 
 ```swift
-@Suite("ProfileViewModel")
-@MainActor
+let orders = StubOrderRepository(result: .failure(.server(code: 500)))
+```
+
+## View-model suites
+
+View models are `@MainActor`, so the suite is too:
+
+```swift
+@Suite @MainActor
 struct ProfileViewModelTests {
-    @Test
-    func loadTransitionsFromLoadingToLoaded() async {
-        let useCase = StubGetProfileUseCase(result: .success(.sample))
-        let model = ProfileViewModel(getProfile: useCase)
+    @Test func loadMovesFromLoadingToLoaded() async {
+        let model = ProfileViewModel(getProfile: StubGetProfileUseCase(result: .success(.sample)))
 
         #expect(model.state == .loading)
         await model.load()
         #expect(model.state == .loaded(.sample))
     }
-
-    @Test
-    func loadTransitionsToErrorOnFailure() async {
-        let useCase = StubGetProfileUseCase(result: .failure(DomainError.network(code: 500)))
-        let model = ProfileViewModel(getProfile: useCase)
-
-        await model.load()
-
-        guard case .error = model.state else {
-            Issue.record("expected .error, got \(model.state)")
-            return
-        }
-    }
 }
 ```
 
-## Hand-rolled fakes (pattern)
+Two rules that catch real bugs:
 
-```swift
-final class StubOrderRepository: OrderRepository {
-    let result: Result<Order, Error>
-    init(result: Result<Order, Error>) { self.result = result }
-    func get(id: OrderID) async throws -> Order { try result.get() }
-}
+- **Assert the whole state sequence the test cares about**, including the initial `.loading`, not just the final value. A view model that jumps straight to `.loaded` and never shows a spinner passes a final-value-only assertion.
+- **Await the method under test.** There is no scheduler to advance here, but there is also no polling: `while model.state == .loading { }` in a test is always wrong.
 
-final class FakeOrderRepository: OrderRepository, @unchecked Sendable {
-    var orders: [OrderID: Order] = [:]
-    func get(id: OrderID) async throws -> Order {
-        guard let o = orders[id] else { throw DomainError.notFound }
-        return o
-    }
-}
-```
+## Stubs vs fakes
 
-- **Stubs** return a scripted answer.
-- **Fakes** have working-ish in-memory behaviour; prefer them for protocols with > 2 methods.
-- Mark fakes `@unchecked Sendable` only when they're used across actor boundaries and you're sure they're thread-safe.
+- **Stub** — returns a scripted answer, ignores input. Default choice for a one- or two-method protocol.
+- **Fake** — working in-memory behaviour. Worth it once a protocol has more than two methods, or when a test needs write-then-read.
 
-## Testing URLSession code
+Both are hand-rolled `final class`es in the test target. Mark one `@unchecked Sendable` only when it genuinely crosses an actor boundary *and* you've made it thread-safe — a lock, or immutability.
 
-Inject a `URLSession` that uses a custom `URLProtocol`:
+## The network seam
+
+Test `URLSession` code by injecting a session configured with a custom `URLProtocol`:
 
 ```swift
 final class MockURLProtocol: URLProtocol {
-    static var handler: ((URLRequest) throws -> (HTTPURLResponse, Data))?
+    nonisolated(unsafe) static var handler: ((URLRequest) throws -> (HTTPURLResponse, Data))?
 
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func stopLoading() {}
 
     override func startLoading() {
-        guard let handler = Self.handler else { fatalError("no handler") }
+        guard let handler = Self.handler else {
+            client?.urlProtocol(self, didFailWithError: URLError(.unknown)); return
+        }
         do {
             let (response, data) = try handler(request)
             client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
@@ -131,58 +88,35 @@ final class MockURLProtocol: URLProtocol {
             client?.urlProtocol(self, didFailWithError: error)
         }
     }
-
-    override func stopLoading() {}
 }
 
-// in the test:
 let config = URLSessionConfiguration.ephemeral
 config.protocolClasses = [MockURLProtocol.self]
 let session = URLSession(configuration: config)
-MockURLProtocol.handler = { _ in
-    (HTTPURLResponse(url: .init(string: "x")!, statusCode: 200, httpVersion: nil, headerFields: nil)!,
-     Data(#"{"id":"abc"}"#.utf8))
-}
 ```
 
-## UI tests (XCTest)
+The static handler is shared mutable state, so suites using it need `@Suite(.serialized)`. Reset it in the test that sets it, not in a shared teardown, or a parallel run will read someone else's handler.
+
+## UI tests
+
+Stub the data behind a launch argument so the run never touches the network:
 
 ```swift
-final class OrderFlowUITests: XCTestCase {
-    func test_user_can_view_order_detail() {
-        let app = XCUIApplication()
-        app.launchArguments = ["-UITests", "-StubOrders"]
-        app.launch()
-
-        app.buttons["Orders"].tap()
-        XCTAssertTrue(app.staticTexts["Order #123"].waitForExistence(timeout: 2))
-    }
-}
+app.launchArguments = ["-UITests", "-StubOrders"]
 ```
 
-- Stub data behind a launch argument so the UI test doesn't hit the network.
-- Keep UI tests focused on navigation + visible results — leave logic testing to Swift Testing.
+Keep UI tests to navigation and visible results — a UI test asserting business logic is a slow, flaky unit test.
 
 ## Rules of thumb
 
-- **One concept per test.** Long tests with five loosely-related assertions are a smell.
-- **No real IO in unit tests.** No real `URLSession`, no real SwiftData. Use fakes.
-- **Deterministic time.** Inject a `() -> Date` or `Clock` rather than calling `Date()`.
-- **Name tests as sentences.** `func returnsOrderOnSuccess()` or `@Test("returns order when repository accepts")`.
-
-## Run tests
-
-```bash
-# Xcode scheme:
-xcodebuild test -scheme App -destination 'platform=iOS Simulator,name=iPhone 15'
-
-# Just one suite:
-xcodebuild test -scheme App -destination 'platform=iOS Simulator,name=iPhone 15' -only-testing:AppTests/SubmitOrderUseCaseTests
-```
+- **One concept per test.** Five loosely related assertions in one function is a smell.
+- **No real IO in unit tests.** No live `URLSession`, no on-disk SwiftData, no real Keychain.
+- **Deterministic time.** Inject `() -> Date` or a `Clock`; never call `Date()` inside the type under test.
+- **Name tests as sentences** — `loadMovesFromLoadingToLoaded()`, or a `@Test("...")` description.
 
 ## Don'ts
 
-- No `XCTestExpectation` / `wait(for:)` in new async tests — use `await`.
-- No `Thread.sleep(forTimeInterval:)` — if you're waiting on async work, `await` it.
-- No test that depends on another test's side effects.
-- No `#expect(true)` or `XCTAssert(true)` — a passing test that never fails is a liability.
+- **No `XCTestExpectation` / `wait(for:)`** in new async tests — `await` the thing.
+- **No `Thread.sleep`.** If you're waiting on async work, await it; if you're waiting on a UI element, `waitForExistence(timeout:)`.
+- **No test that depends on another test's side effects.** Swift Testing runs suites in parallel by default.
+- **No `#expect(true)`.** A test that can't fail is a liability with a green checkmark.

@@ -21,7 +21,7 @@ A native Android application written in **Kotlin** with **Jetpack Compose** as t
 
 ## Module / package layout
 
-The project is **feature-first** — each feature is a top-level package containing only the layers it actually needs. Cross-feature plumbing (network factory, error types, analytics interface, theme, top-level nav) lives under `core/`. See `.claude/skills/android-app-skeleton/SKILL.md` for the canonical layout the scaffold emits.
+The project is **feature-first** — each feature is a top-level package containing only the layers it actually needs. Cross-feature plumbing (network factory, error types, analytics interface, theme, top-level nav) lives under `core/`. See `${CLAUDE_PLUGIN_ROOT}/skills/android-app-skeleton/SKILL.md` for the canonical layout the scaffold emits.
 
 ```
 app/src/main/java/<package>/
@@ -94,11 +94,11 @@ ViewModels expose user actions as **discrete public functions** (`fun retry()`, 
 - **Write tests** for new use cases and ViewModels. Compose UI tests for new screens where practical.
 - **Use the version catalog** when adding dependencies.
 - **Respect Kotlin idioms**: data classes, sealed classes/interfaces, extension functions, scope functions used sparingly and intentionally.
-- **Keep Composables small.** Extract children when a function body exceeds ~60-80 lines or nesting exceeds 3 levels — but the real rule is readability and single-responsibility, not the line count. See `.claude/skills/compose-ui/SKILL.md` for the rationale.
+- **Keep Composables small.** Extract children when a function body exceeds ~60-80 lines or nesting exceeds 3 levels — but the real rule is readability and single-responsibility, not the line count. See `${CLAUDE_PLUGIN_ROOT}/skills/compose-ui/SKILL.md` for the rationale.
 
 ## Specialist agents
 
-Use the `Task` tool with these subagents for focused work (see `.claude/agents/`):
+Use the `Task` tool with these subagents for focused work (see `${CLAUDE_PLUGIN_ROOT}/agents/`):
 
 - `android-architect` — architectural decisions, module boundaries, trade-offs.
 - `android-ui-engineer` — building Compose screens and components.
@@ -112,7 +112,7 @@ Use the `Task` tool with these subagents for focused work (see `.claude/agents/`
 
 ## Useful slash commands
 
-See `.claude/commands/`:
+See `${CLAUDE_PLUGIN_ROOT}/commands/`:
 
 - `/init-android-app` — scaffold a brand-new Android app from scratch (AGP 9, Hilt, Compose, Home + Feed/Profile bottom-nav, analytics layer). Resolves every dependency version online before writing files.
 - `/new-feature` — scaffold a full feature (data + domain + presentation).

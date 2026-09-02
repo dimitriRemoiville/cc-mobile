@@ -8,7 +8,7 @@ Add a new SwiftUI view named **$ARGUMENTS**. This command is for presentation-la
 
 Steps:
 
-1. Read `.claude/skills/swiftui-views/SKILL.md` and the nearest existing view in the project for structural reference.
+1. Read `${CLAUDE_PLUGIN_ROOT}/skills/swiftui-views/SKILL.md` and the nearest existing view in the project for structural reference.
 2. Figure out where the view belongs. If the user named a feature folder, put it there; otherwise ask.
 3. Create these files:
 

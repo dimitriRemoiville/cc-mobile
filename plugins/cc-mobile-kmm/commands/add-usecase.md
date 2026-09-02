@@ -9,7 +9,7 @@ Add a single-purpose use case inside an existing feature in `shared/src/commonMa
 
 ## Before writing any code
 
-Read `.claude/skills/kmm-architecture/SKILL.md` and `.claude/skills/kmm-testing/SKILL.md`. Confirm the use case really earns its keep (non-trivial logic, multi-repo orchestration, or the same operation used by several ViewModels). A one-liner wrapper around a repository call is not worth a use case — call the repository from the ViewModel instead.
+Read `${CLAUDE_PLUGIN_ROOT}/skills/kmm-architecture/SKILL.md` and `${CLAUDE_PLUGIN_ROOT}/skills/kmm-testing/SKILL.md`. Confirm the use case really earns its keep (non-trivial logic, multi-repo orchestration, or the same operation used by several ViewModels). A one-liner wrapper around a repository call is not worth a use case — call the repository from the ViewModel instead.
 
 ## What to produce
 

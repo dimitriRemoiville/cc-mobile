@@ -10,11 +10,11 @@ Scaffold a new feature. `$ARGUMENTS` is the feature name in `snake_case` (e.g. `
 ## Before writing any code
 
 Read:
-- `.claude/skills/flutter-architecture/SKILL.md`
-- `.claude/skills/bloc-state/SKILL.md`
-- `.claude/skills/get-it-di/SKILL.md`
-- `.claude/skills/widgets-and-screens/SKILL.md`
-- `.claude/skills/dio-networking/SKILL.md` (if the feature hits the API)
+- `${CLAUDE_PLUGIN_ROOT}/skills/flutter-architecture/SKILL.md`
+- `${CLAUDE_PLUGIN_ROOT}/skills/bloc-state/SKILL.md`
+- `${CLAUDE_PLUGIN_ROOT}/skills/get-it-di/SKILL.md`
+- `${CLAUDE_PLUGIN_ROOT}/skills/widgets-and-screens/SKILL.md`
+- `${CLAUDE_PLUGIN_ROOT}/skills/dio-networking/SKILL.md` (if the feature hits the API)
 
 Confirm with the user: does this feature need local persistence (drift)? Any existing repository it depends on?
 

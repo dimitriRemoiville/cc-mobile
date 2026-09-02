@@ -7,6 +7,16 @@ description: Release-time conventions for this iOS project — `MARKETING_VERSIO
 
 Everything a release pass touches, and nothing it doesn't. This skill is intentionally small (one page) so it's cheap for `ios-release-engineer` to preload — the bigger `ios-app-skeleton` skill is overkill for shipping work.
 
+## When this applies
+
+The release shape below assumes **App Store Connect + `fastlane match` signing + xcconfig-driven versions + Crashlytics or Sentry dSYM upload**. On an existing app:
+
+- **An internal CI/CD pipeline** (Bitrise, Xcode Cloud, GitHub Actions, Jenkins, Codemagic) → keep it. The version bump, signing, and dSYM upload still have to happen, but the *invocation* belongs to the pipeline. Apply the principles (monotonic build number, signed archive, symbols uploaded before users hit a crash), not the literal `fastlane pilot` command.
+- **Apple automatic signing, no `match`** → fine for a small team. Skip the `match` section; the pre-release checklist still applies, minus the `match appstore --readonly` step.
+- **Firebase App Distribution or TestFlight-only** → swap the upload target and skip the App Store metadata section; the rest is unchanged.
+- **No crash reporter** → skip dSYM upload. **No `fastlane`** → the `xcodebuild` sequence stands on its own; only the upload step needs replacing.
+- **Versions hard-coded in `project.pbxproj`** (no xcconfig) → flag it and use `agvtool`, which writes the pbxproj correctly. Don't hand-edit those blocks.
+
 ## Version-bump shape
 
 Two fields move per release:

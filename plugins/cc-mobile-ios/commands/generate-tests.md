@@ -21,7 +21,7 @@ Exactly one of:
 
 ## Procedure
 
-1. **Load context.** Read `.claude/skills/ios-testing/SKILL.md` and `.claude/skills/swift-style/SKILL.md`.
+1. **Load context.** Read `${CLAUDE_PLUGIN_ROOT}/skills/ios-testing/SKILL.md` and `${CLAUDE_PLUGIN_ROOT}/skills/swift-style/SKILL.md`.
 
 2. **Discover targets.**
    - `--feature`: glob for Swift files under the feature directory. Filter to testable types (see classification below).

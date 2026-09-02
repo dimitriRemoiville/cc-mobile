@@ -38,7 +38,7 @@ Refresh iOS dependencies. Source of truth depends on the package manager:
    - Group by area: networking (Alamofire, Apollo, Moya), persistence (GRDB, Realm), Firebase, observability (Sentry, Datadog), testing (Nimble, Quick, Cuckoo), UI (SnapKit, Lottie, Kingfisher), misc.
    - Skip any line tagged with a trailing `// pin: <reason>` comment.
 
-5. **Sanity-check against the iOS scaffolding skill's compatibility notes** (`.claude/skills/ios-app-skeleton/SKILL.md`). If the skeleton has a "Compatibility traps" section (Swift 6 concurrency on, iOS 18 deployment target, Firebase ↔ GoogleService-Info.plist), surface any trap the proposed bump would hit and pick the next compatible version. If no such section exists yet, just print a generic "check the iOS scaffolding skill for known traps" line.
+5. **Sanity-check against the skeleton's toolchain floor** (`.claude/skills/ios-app-skeleton/SKILL.md` → "Target floor", and `.claude/skills/ios-app-skeleton/references/app-features.md` for the iOS 17 compatibility deltas). Surface any trap the proposed bump would hit — a Swift-tools bump that outruns the installed Xcode, a package whose new major raises its own minimum deployment target above the app's, or a Firebase bump that changes the `GoogleService-Info.plist` contract — and pick the next compatible version.
 
 6. **Dry-run (default):** print the proposed diff. Stop. Ask: "Apply?"
 

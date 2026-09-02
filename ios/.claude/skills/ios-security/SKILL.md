@@ -1,13 +1,19 @@
 ---
 name: ios-security
-description: iOS security patterns — App Transport Security, URLSession certificate pinning, Keychain ACLs, biometric gating, sandbox hardening, DeviceCheck / App Attest. Load whenever adding auth, secrets, or network calls crossing a trust boundary.
+description: iOS security patterns for this project — App Transport Security, SPKI certificate pinning with rotation, Keychain access-control policy, App Attest, secrets handling, file protection, and the WebKit / URL-scheme rules. Load whenever adding auth, secrets, or network calls that cross a trust boundary.
 ---
 
 # iOS security
 
+## When this applies
+
+Stack-agnostic. ATS, Keychain access control, App Attest, file protection, and the WebKit rules hold for any iOS app regardless of architecture. Two subsections assume a specific stack: the pinning delegate below is written for `URLSession` (with **Alamofire**, use its `ServerTrustManager` with a `PublicKeysTrustEvaluator` — same SPKI principle, different API), and the Keychain notes assume the `KeychainStore` seam from `keychain-secure-storage` (with a wrapper library, verify what accessibility class it defaults to).
+
 ## App Transport Security
 
-ATS is on by default and should stay that way. Never add `NSAllowsArbitraryLoads = true` in production `Info.plist`. If you absolutely need cleartext for a dev host:
+ATS is on by default and stays on. **`NSAllowsArbitraryLoads = true` never ships.**
+
+If a dev host genuinely needs cleartext, scope the exception to that domain and put it in a **Debug-only `Info.plist` variant**, not the shipping one:
 
 ```xml
 <key>NSAppTransportSecurity</key>
@@ -20,19 +26,15 @@ ATS is on by default and should stay that way. Never add `NSAllowsArbitraryLoads
 </dict>
 ```
 
-Scope exceptions to the specific domain, and gate the whole Info.plist variant behind a debug build configuration.
-
 ## Certificate pinning
 
-Pin the SPKI, not the full cert. Keep at least two pins (current + next) and ship the rotation pin before the server rotates.
+**Pin the SPKI hash, not the certificate.** Certificates rotate on their own schedule; the public key usually doesn't, so SPKI pinning survives renewal.
+
+**Ship at least two pins — current and next — before the server rotates.** A single pin turns a routine server-side rotation into a remote kill switch for every installed copy of the app, with no way to fix it but an App Store release.
 
 ```swift
 final class PinningDelegate: NSObject, URLSessionDelegate {
-    private let pinnedSPKISha256: Set<Data>
-
-    init(pins: [String]) {
-        self.pinnedSPKISha256 = Set(pins.compactMap { Data(base64Encoded: $0) })
-    }
+    private let pinned: Set<Data>   // SHA-256 of the SPKI
 
     func urlSession(
         _ session: URLSession,
@@ -42,104 +44,82 @@ final class PinningDelegate: NSObject, URLSessionDelegate {
         guard
             challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
             let trust = challenge.protectionSpace.serverTrust,
-            let cert = SecTrustGetCertificateChain(trust) as? [SecCertificate],
-            let leaf = cert.first
+            let chain = SecTrustCopyCertificateChain(trust) as? [SecCertificate],
+            let leaf = chain.first,
+            let key = SecCertificateCopyKey(leaf),
+            let spki = SecKeyCopyExternalRepresentation(key, nil) as Data?
         else {
             completionHandler(.cancelAuthenticationChallenge, nil); return
         }
 
-        let key = SecCertificateCopyKey(leaf)!
-        let spki = SecKeyCopyExternalRepresentation(key, nil)! as Data
-        let hash = Data(SHA256.hash(data: spki))
-
-        if pinnedSPKISha256.contains(hash) {
+        if pinned.contains(Data(SHA256.hash(data: spki))) {
             completionHandler(.useCredential, URLCredential(trust: trust))
         } else {
             completionHandler(.cancelAuthenticationChallenge, nil)
         }
     }
 }
-
-let session = URLSession(configuration: .default, delegate: PinningDelegate(pins: [
-    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
-    "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=",
-]), delegateQueue: nil)
 ```
 
-## App Attest / DeviceCheck
+Pin auth and payment endpoints. Pinning every endpoint including third-party CDNs multiplies the rotation risk for no additional protection.
 
-For "is this really our app, unmodified, running on a real device" proofs:
+## Secrets
+
+**Don't ship OAuth client secrets, API keys, or signing keys in the app.** Anything in the bundle is extractable; obfuscation buys minutes. If a third-party SDK demands a secret, proxy the call through your backend.
+
+Values that are genuinely public (a verification public key, a bundle-scoped analytics id) go in an `.xcconfig` with `$(VARIABLE)` substitution, not hard-coded in Swift — that keeps per-environment values out of the source and out of `git` history.
+
+**No OAuth code exchange in the client.** PKCE, with the exchange on your backend.
+
+## Keychain access control
+
+The policy lives in `keychain-secure-storage`. The two rules the reviewer enforces here:
+
+- **`ThisDeviceOnly` accessibility classes only.** The others restore onto a different device from an encrypted backup. `kSecAttrAccessibleAlways` is deprecated and is a finding on sight.
+- **`.biometryCurrentSet`, not `.userPresence`,** for anything that authorises value — it invalidates when a new biometric is enrolled, which is exactly the passcode-then-add-my-face attack. `.userPresence` also accepts the passcode, defeating the point.
+
+## App Attest
+
+For "is this really our unmodified app on a real device":
 
 ```swift
-import DeviceCheck
-
-Task {
-    guard DCAppAttestService.shared.isSupported else { return }
-    let keyId = try await DCAppAttestService.shared.generateKey()
-    let challenge = try await backend.requestAttestChallenge()
-    let attestation = try await DCAppAttestService.shared.attestKey(keyId, clientDataHash: challenge.hash)
-    try await backend.registerAttestation(keyId: keyId, attestation: attestation)
-}
+guard DCAppAttestService.shared.isSupported else { return }
+let keyId = try await DCAppAttestService.shared.generateKey()
+let challenge = try await backend.requestAttestChallenge()
+let attestation = try await DCAppAttestService.shared.attestKey(keyId, clientDataHash: challenge.hash)
+try await backend.registerAttestation(keyId: keyId, attestation: attestation)
 ```
 
-Every subsequent sensitive request signs with the same `keyId` via `generateAssertion`. Server verifies with Apple's public keys.
+Subsequent sensitive requests sign with `generateAssertion`. **Verification is server-side, against Apple's root — always.** An attestation the client checks itself proves nothing, because a client that can be modified can be modified to skip the check.
 
-Never use this as a local anti-tamper signal — always verify server-side.
+## File protection
 
-## Biometric gating
+- Files holding user secrets: `.completeFileProtection` (unreadable while locked).
+- App Group shared containers: `NSFileProtectionCompleteUntilFirstUserAuthentication` at minimum.
+- Don't declare entitlements the app doesn't use — camera, microphone, contacts. Each one is attack surface and a review question.
 
-Keychain items can require user presence at read time:
+## URL schemes and universal links
 
-```swift
-let access = SecAccessControlCreateWithFlags(
-    nil,
-    kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly,
-    [.biometryCurrentSet],
-    nil
-)!
-```
+**Custom URL schemes are not exclusive** — any app can register the same scheme and intercept the callback. Never use one for an OAuth redirect or any sensitive callback; use a universal link backed by an `apple-app-site-association` file.
 
-Reading such an item prompts Face ID / Touch ID. `LAContext.evaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, ...)` for explicit pre-authentication.
-
-Use `biometryCurrentSet` (not `.userPresence`) when you want the key to invalidate on biometric re-enrollment.
-
-## Secrets in binary
-
-Don't bundle OAuth client secrets, API keys, or signing keys in the app. Client-side secrets always leak. If a third-party SDK requires one, use an intermediary proxy on your backend.
-
-If you must ship a public key for verification (fine, they're public), store in a `.xcconfig` with `$(VARIABLE)` substitution, not hard-coded in Swift.
-
-## Sandbox hardening
-
-- `Info.plist`: don't claim entitlements you don't use (camera, mic, contacts). Every extra prompt is attack surface and a review risk.
-- Shared containers (App Group) get strict file protection: `NSFileProtectionCompleteUntilFirstUserAuthentication` at minimum.
-- Files with user secrets: `NSFileProtectionComplete` (not accessible when locked).
-
-```swift
-try data.write(to: url, options: [.completeFileProtection])
-```
-
-## URL scheme + universal link hijacking
-
-- Universal links require a server-side `apple-app-site-association` file. Never rely on a custom URL scheme for sensitive callbacks (OAuth, etc.) — schemes are not exclusive.
-- Validate `UIApplication`'s open URL source: which app opened us, which URL, and what state the app was in.
+When handling an inbound URL, validate the source application and the app's current state before acting on it.
 
 ## WebKit
 
-- `WKWebView` defaults are safe; keep them.
-- User-content JS messaging: validate every `WKScriptMessage` body type. Never `eval()` raw.
-- For third-party OAuth flows, use `ASWebAuthenticationSession` (not `WKWebView`) so the user sees Apple's chrome and cookies stay in Safari's jar.
+- **Use `ASWebAuthenticationSession` for third-party auth flows**, never a `WKWebView`. The user sees Safari's chrome and the credentials never pass through your process.
+- Content JavaScript is controlled per-navigation via `WKWebpagePreferences.allowsContentJavaScript` (iOS 14+). `WKPreferences.javaScriptEnabled` is deprecated — code still setting it is both stale and applying the setting more broadly than intended.
+- **Validate every `WKScriptMessage` body**: check the type and shape before use. A message handler that trusts `message.body` is a script-injection sink.
+- Never combine `loadFileURL(_:allowingReadAccessTo:)` pointed at the app container with untrusted content — that hands the page read access to everything in it.
 
 ## Logging
 
-- `os_log` with private modifiers by default. `%{public}@` for safe strings only.
-- No token, PII, or crash-dumped URL in logs.
+`os_log` / `Logger` with private interpolation by default. `%{public}@` is for stable, non-identifying strings only — never a token, an email, or a URL carrying query parameters.
 
 ## Hard nos
 
-- No `NSAllowsArbitraryLoads = true` in release Info.plist.
-- No accepting any server trust (`SecTrustEvaluate*` short-circuit).
-- No storing tokens in `UserDefaults`.
-- No `WKWebView` rendering arbitrary user HTML with `allowingReadAccessTo: url` pointing at the app container.
-- No `print(token)` "just to debug".
-- No running OAuth code exchange in the client — use PKCE through a backend.
+- **No `NSAllowsArbitraryLoads = true`** in a shipping `Info.plist`.
+- **No accepting any server trust** — a `URLSessionDelegate` that calls `completionHandler(.useCredential, URLCredential(trust: trust))` unconditionally disables TLS validation.
+- **No tokens in `UserDefaults`**, a plist, or a file.
+- **No secret in the binary.**
+- **No `print(token)` "just to debug".**
+- **No client-side OAuth code exchange.**

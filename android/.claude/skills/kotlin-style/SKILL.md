@@ -1,94 +1,101 @@
 ---
 name: kotlin-style
-description: Kotlin coding conventions and idioms enforced on this project. Load whenever writing or reviewing Kotlin — naming, nullability, data/sealed classes, coroutines, Flow, error handling, and when to use each scope function.
+description: Project-specific Kotlin conventions — the rules that aren't already in the official Kotlin style guide. Covers the `Outcome<T>` / `DomainError` boundary contract, the `runCatching → toOutcome` rule, naming conventions for this codebase, and where idioms diverge from defaults. Load whenever writing or reviewing Kotlin in this project.
 ---
 
-# Kotlin style
+# Kotlin style (project delta)
 
-## Naming
+For everything not below, the [official Kotlin style guide](https://kotlinlang.org/docs/coding-conventions.html) applies. This file only documents where this project's conventions add to or override the defaults.
 
-- `PascalCase` for types, `camelCase` for functions, values, and properties.
-- `UPPER_SNAKE_CASE` only for `const val` at file / companion level.
-- Composables: `PascalCase`, named after the thing they render.
-- Use cases: verb-based classnames, `GetUserProfileUseCase`, `SubmitOrderUseCase`.
-- Boolean getters: `isX`, `hasY`, `canZ`.
+## When this applies
 
-## Nullability
+The error-handling contract below is **opinionated for this project's scaffold** (`Outcome<T>` + `DomainError` from `/init-android-app`). On an existing app:
 
-- Prefer non-null types. A nullable return should carry meaning ("absent" vs "error").
-- `!!` is a smell. Replace with `requireNotNull(x) { "reason" }`, `checkNotNull`, `?.let`, or `?: error("reason")`.
-- Don't use nullable `Boolean` or nullable `Int` casually — use a sealed result type or an explicit default.
+- Codebase already uses `kotlin.Result` everywhere → don't refactor to `Outcome` unless the user asks; apply only the `CancellationException`-rethrow rule.
+- Codebase throws across boundaries → flag it, but don't pretend `Outcome` is universal Kotlin practice.
+- The naming and immutability sections apply regardless of stack.
 
-## Data classes, sealed classes, value classes
+## Naming (project-specific)
 
-- **Data classes** for value objects. Free `equals`/`hashCode`/`copy`/`toString`.
-- **Sealed class / sealed interface** for closed hierarchies: `UiState`, `DomainError`, `Outcome<T>`. Prefer `sealed interface` when there's no shared state.
-- **Value classes** (`@JvmInline value class OrderId(val raw: String)`) for type-safety over primitives — IDs, currency codes, percentages.
+- **Use cases**: verb-based, suffixed `UseCase` — `GetUserProfileUseCase`, `SubmitOrderUseCase`. One class per business action.
+- **Repository implementations**: interface in `domain/`, implementation in `data/` suffixed `Impl` (`OrderRepository` ⇄ `OrderRepositoryImpl`).
+- **Composables**: noun-based, named after what they render (`OrderRoute` vs `OrderScreen` — see `compose-ui` for the Route/Screen split).
+- **UiState / UiEvent**: sealed types per screen, named `<Feature>UiState`, `<Feature>UiEvent`.
+- **DTOs**: suffix `Dto` (`OrderDto`), kept in `<feature>/data/remote/` next to their `toDomain()` mapper.
 
-## Scope functions
+The rest of naming follows Kotlin defaults — `PascalCase` types, `camelCase` functions/values, `UPPER_SNAKE_CASE` for `const val`.
 
-| Function | Receiver | Returns | Use for |
-|---|---|---|---|
-| `let` | `it` | lambda result | null-safety chains, mapping a non-null value |
-| `run` | `this` | lambda result | configuring + computing from a receiver |
-| `apply` | `this` | the receiver | configuring an object, returns it |
-| `also` | `it` | the receiver | side effects (logging, assertion) mid-chain |
-| `with` | `this` | lambda result | working with a non-null receiver |
+## Typed IDs
 
-Don't nest them. If you're writing `let { apply { run { ... } } }`, split into functions.
+Use `@JvmInline value class` for IDs that would otherwise be raw `String` / `Long`:
 
-## Coroutines and Flow
+```kotlin
+@JvmInline value class OrderId(val raw: String)
+@JvmInline value class UserId(val raw: String)
+```
 
-- `suspend fun` for one-shot async work.
-- `Flow` for streams. `StateFlow` for UI state (always has a current value). `SharedFlow` for event buses. `Channel` for effects you want to consume exactly once.
-- Never use `GlobalScope`.
-- Use structured concurrency: `viewModelScope`, `applicationScope`, `coroutineScope { }` for parallel-then-join.
-- Switch dispatchers at the boundary that does the work:
-  ```kotlin
-  override suspend fun fetch(): Result<T> = withContext(Dispatchers.IO) { ... }
-  ```
-- Cancellation is cooperative — check `ensureActive()` in long loops, honour `CancellationException`.
-- Test coroutines with `runTest { }` and inject a `TestDispatcher`.
+Catches `getOrder(userId)` mix-ups at compile time, costs nothing at runtime.
 
-## Error handling
+## Error-handling contract
 
-- **Canonical contract: `Outcome<T>` + `DomainError`.** Business operations cross layer boundaries as `Outcome`, never as `Result<T>` and never as raw `throw`. The two types are defined once in `core/domain/Outcome.kt` and `core/domain/DomainError.kt` (see `android-app-skeleton`); every use case, repository method, and ViewModel that needs a typed failure goes through them. The `Result → Outcome` adapter (`core/data/network/Outcomes.kt`) is the only place that touches `runCatching` directly — see "Error handling" in `retrofit-networking`.
-  ```kotlin
-  sealed interface Outcome<out T> {
-      data class Success<T>(val value: T) : Outcome<T>
-      data class Failure(val error: DomainError) : Outcome<Nothing>
-  }
+**Domain-facing signatures return `Outcome<T>`, never `Result<T>` and never raw `throw`.** The two types are defined once in `core/domain/Outcome.kt` and `core/domain/DomainError.kt` (see `android-app-skeleton`); every use case, repository method, and ViewModel that needs a typed failure goes through them.
 
-  sealed class DomainError(open val cause: Throwable? = null) {
-      data class Network(override val cause: Throwable? = null) : DomainError(cause)
-      data class Unauthorized(override val cause: Throwable? = null) : DomainError(cause)
-      data class NotFound(override val cause: Throwable? = null) : DomainError(cause)
-      data class Server(val code: Int, override val cause: Throwable? = null) : DomainError(cause)
-      data class Unknown(override val cause: Throwable? = null) : DomainError(cause)
-  }
-  ```
-- **Don't mix `Result<T>` and `Outcome<T>`.** Kotlin's stdlib `Result<T>` is fine *internally* inside the data layer (for example, wrapping a `runCatching { api.call() }` before mapping it). It must not appear in domain-facing signatures. The reviewer agent flags any `Result<T>` return type on a `domain/` interface.
-- `runCatching { ... }` at the data-layer boundary is fine — fold it straight into an `Outcome`. Don't use it as a drop-in `try/catch` anywhere else; it swallows `CancellationException` unless you rethrow.
-- Map platform exceptions to `DomainError` in the repository. The domain layer shouldn't know about `IOException` or `HttpException`.
+```kotlin
+sealed interface Outcome<out T> {
+    data class Success<T>(val value: T) : Outcome<T>
+    data class Failure(val error: DomainError) : Outcome<Nothing>
+}
 
-## Functions
+sealed class DomainError(open val cause: Throwable? = null) {
+    data class Network(override val cause: Throwable? = null) : DomainError(cause)
+    data class Unauthorized(override val cause: Throwable? = null) : DomainError(cause)
+    data class NotFound(override val cause: Throwable? = null) : DomainError(cause)
+    data class Server(val code: Int, override val cause: Throwable? = null) : DomainError(cause)
+    data class Unknown(override val cause: Throwable? = null) : DomainError(cause)
+}
+```
 
-- Default arguments > overload explosions.
-- Named arguments at call sites with 3+ parameters.
-- Extension functions for operations on types you don't own, or to read like DSL. Don't use them to hide state.
-- Top-level functions live in files named for what they do, not `Util.kt`. `StringExtensions.kt`, `FlowExtensions.kt` are fine.
+**`runCatching` only inside the data layer, only piped through `toOutcome`:**
 
-## Immutability
+```kotlin
+runCatching { api.getOrder(id.raw).toDomain() }.toOutcome(::toDomainError)
+```
 
-- `val` by default, `var` only when you need reassignment.
-- Prefer `List`/`Map`/`Set` (read-only) over `Mutable*`.
-- Copy, don't mutate:
-  ```kotlin
-  state = state.copy(items = state.items + newItem)
-  ```
+The canonical adapter lives in `core/data/network/Outcomes.kt`. It rethrows `CancellationException` — **open-coded `runCatching { ... }.fold(...)` silently swallows cancellation** and is the single most common bug this rule prevents. The reviewer flags any open-coded `runCatching.fold(...)` and any `Result<T>` return on a `domain/` interface.
+
+Map exceptions to `DomainError` at the repository boundary. The domain layer must not know about `IOException` or `HttpException`.
+
+## Coroutines (project rules)
+
+Standard Kotlin coroutine rules apply; this project adds:
+
+- **No `GlobalScope`** anywhere. The reviewer flags it.
+- **Dispatcher boundary in the repository, not the ViewModel.** `viewModelScope.launch { repository.fetch() }` — the repository's `withContext(Dispatchers.IO)` is where the switch happens.
+- **`StateFlow` for UI state, `Channel` for one-shot effects.** `SharedFlow` only when you genuinely need replay semantics. `LiveData` is forbidden in new code.
+- Collect with `collectAsStateWithLifecycle()`, never `collectAsState()` — see `compose-ui`.
+
+## Sealed hierarchies in this project
+
+The three sealed types the codebase relies on (don't reinvent them):
+
+- `Outcome<T>` — every domain-facing result.
+- `DomainError` — every domain-facing failure.
+- `<Feature>UiState` — every screen's state machine. Branches are `Loading` / `Error` / `Success` by convention; add more only when the screen genuinely has them.
+
+Prefer `sealed interface` over `sealed class` when there's no shared state.
+
+## Immutability and copy
+
+State updates copy, never mutate:
+
+```kotlin
+_state.update { it.copy(items = it.items + newItem) }
+```
+
+`MutableStateFlow.update { }` is preferred over `value = value.copy(...)` — the lambda runs atomically.
 
 ## Visibility
 
-- `internal` is the default for module-internal APIs.
-- `private` for file- or class-internal helpers.
+- `private` for file-/class-internal helpers.
+- `internal` for module-internal APIs once `:feature:*` / `:core:*` modules exist (see `android-architecture` → "Module or package?"). In a single `:app` module, `internal` is equivalent to `public` — don't over-rely on it.
 - `public` should be deliberate.

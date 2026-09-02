@@ -169,7 +169,7 @@ inline fun <T> Result<T>.mapError(transform: (Throwable) -> DomainError): Result
 
 ## Testing with MockEngine
 
-See `.claude/skills/kmm-testing/SKILL.md`. `MockEngine` is multiplatform-friendly; use it in `commonTest`.
+See `${CLAUDE_PLUGIN_ROOT}/skills/kmm-testing/SKILL.md`. `MockEngine` is multiplatform-friendly; use it in `commonTest`.
 
 ## Common pitfalls
 

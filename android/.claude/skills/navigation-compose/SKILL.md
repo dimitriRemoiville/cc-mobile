@@ -1,52 +1,34 @@
 ---
 name: navigation-compose
-description: Navigation Compose 2.8+ type-safe routes via @Serializable destinations, nested graphs, result passing, deep links. Load whenever adding a screen, route, or nav graph.
+description: Project-specific Navigation Compose 2.8+ conventions — typed `@Serializable` destinations, `SavedStateHandle.toRoute<T>()` arg binding in ViewModels, the no-string-routes hard-no, and single-Activity + `enableEdgeToEdge` shape. Load whenever adding a screen, route, or nav graph. For Jetpack Navigation 3, see [`navigation-3`](https://github.com/android/skills/tree/main/navigation/navigation-3) (tracked as a follow-up in the marketplace).
 ---
 
-# Navigation Compose (type-safe)
+# Navigation Compose (project delta)
 
-## Why
+For Nav Compose fundamentals — destination model, `NavHost`, `composable<T>()`, `entry.toRoute<T>()`, nested graphs, `deepLinks`, result-passing via `SavedStateHandle` — read the [official Navigation Compose guide](https://developer.android.com/develop/ui/compose/navigation). This file documents only this project's conventions.
 
-String routes (`"orders/{orderId}"`) push arg parsing into the body and make nav call sites stringly-typed. Since Nav Compose 2.8 you can model destinations as `@Serializable` classes / objects; the library derives the route and arg parsing for you.
+## When this applies
 
-## Destination model
+Navigation Compose **2.8+** with typed `@Serializable` destinations. On an existing app:
 
-One file per nav graph. Destinations are `@Serializable` `data object` (no args) or `data class` (with args).
+- **Navigation 3** (`androidx.navigation3.*`, `NavBackStack`, scene strategies) → use Google's [`navigation-3`](https://github.com/android/skills/tree/main/navigation/navigation-3) skill instead. The patterns here are the prior generation; we're tracking Nav 3 migration as a marketplace follow-up.
+- **String-route Nav Compose** (`composable("orders/{orderId}")`) → upgrade only if the user asks; the typed shape requires `kotlinx-serialization` and a coordinated migration.
+- **AndroidX Navigation with XML graphs** (`res/navigation/`, `findNavController()`) → skip; that's View-based and out of scope.
+- **No navigation library / hand-rolled routing** → don't introduce Nav Compose unless the user asks.
 
-```kotlin
-@Serializable data object Home
-@Serializable data object Cart
-@Serializable data class OrderDetail(val orderId: String)
-@Serializable data class Search(val initialQuery: String = "")
-```
+## Single-Activity shape (project mandate)
 
-- Arg types are limited to what `NavType` supports natively (String/Int/Long/Boolean/Float) plus `@Serializable` parcelable-equivalents. Custom types need a `NavType` declaration.
-- **No nullable primitive args unless you also default them.** Nav Compose can't synthesize a null sentinel without a default.
+- **One `Activity`** hosting `AppNavHost`. No multi-Activity navigation.
+- **`enableEdgeToEdge()`** in `MainActivity.onCreate()` — see `.claude/skills/android-app-skeleton/references/app-module.md`. Screens that need to respect insets do so via `Modifier.safeDrawingPadding()` or `Scaffold` content padding, not by disabling edge-to-edge.
+- The top-level graph lives in `core/navigation/AppNavGraph.kt`; feature graphs are composed in via `NavGraphBuilder` extension functions in each feature.
 
-## Graph
+## Destinations — typed only
 
-```kotlin
-@Composable
-fun AppNavHost(navController: NavHostController = rememberNavController()) {
-    NavHost(navController = navController, startDestination = Home) {
-        composable<Home> { HomeRoute(onOpenOrder = { id -> navController.navigate(OrderDetail(id)) }) }
-        composable<Cart> { CartRoute() }
-        composable<OrderDetail> { entry ->
-            val route: OrderDetail = entry.toRoute()
-            OrderDetailRoute(orderId = route.orderId)
-        }
-        composable<Search> { entry ->
-            SearchRoute(initialQuery = entry.toRoute<Search>().initialQuery)
-        }
-    }
-}
-```
+Destinations are `@Serializable data object` (no args) or `@Serializable data class` (with args). Arg types are limited to what `NavType` supports natively (String/Int/Long/Boolean/Float). **Nullable primitive args require a default value** — Nav Compose can't synthesize a null sentinel otherwise.
 
-`entry.toRoute<T>()` deserialises the route into the typed destination. Don't go back to pulling args out of `SavedStateHandle` by string key.
+The route declaration lives in the feature's `ui/` package (e.g. `feature/orders/ui/OrderDetailRoute.kt`); the top-level `AppNavGraph` imports it. **No string routes in new code** — the reviewer flags `composable("home")`-style calls every time.
 
-## ViewModel destination binding
-
-ViewModels pick up destination args through `SavedStateHandle.toRoute<T>()`:
+## ViewModel arg binding — `SavedStateHandle.toRoute<T>()`
 
 ```kotlin
 @HiltViewModel
@@ -59,66 +41,25 @@ class OrderDetailViewModel @Inject constructor(
 }
 ```
 
-Don't pass args through composable parameters when the ViewModel owns them — it duplicates the source of truth.
+**Don't pass args through composable parameters when the ViewModel owns them** — it duplicates the source of truth. The Route composable calls `hiltViewModel()`; the VM reads its own args from `SavedStateHandle.toRoute<T>()`.
 
-## Nested graphs
+Also: **no raw `NavBackStackEntry.arguments?.getString("...")` lookups.** That's the string-route shape sneaking back in.
 
-For feature modules, a graph extension function keeps routes local:
+## Result passing — `previousBackStackEntry.savedStateHandle`
 
-```kotlin
-fun NavGraphBuilder.ordersGraph(onOpenDetail: (String) -> Unit) {
-    navigation<OrdersGraph>(startDestination = OrdersList) {
-        composable<OrdersList> { OrdersListRoute(onOpenDetail = onOpenDetail) }
-        composable<OrderDetail> { /* ... */ }
-    }
-}
+Use `SavedStateHandle` on the **previous** back-stack entry, not an event bus. **Consume-once semantics:** set the result back to `null` after reading, so a config-change-driven recomposition doesn't replay it.
 
-@Serializable data object OrdersGraph
-@Serializable data object OrdersList
-```
-
-## Result passing
-
-Use `SavedStateHandle` on the **previous** back stack entry, **not** an event bus:
-
-```kotlin
-// On the detail screen, return a result to the caller
-navController.previousBackStackEntry
-    ?.savedStateHandle
-    ?.set("order_result", OrderResult.Placed(id = orderId))
-navController.popBackStack()
-
-// On the caller screen, observe it
-val result = navController.currentBackStackEntry
-    ?.savedStateHandle
-    ?.getStateFlow<OrderResult?>("order_result", null)
-    ?.collectAsStateWithLifecycle()
-```
-
-Consume-once semantics: set back to `null` after reading.
+The full code shape is in the official guide; the project rule is "previous entry + consume-once, never `SharedFlow` across screens for nav results."
 
 ## Deep links
 
-Declare with `deepLinks`:
-
-```kotlin
-composable<OrderDetail>(
-    deepLinks = listOf(navDeepLink<OrderDetail>(basePath = "https://example.com/orders")),
-) { /* ... */ }
-```
-
-Add the matching `intent-filter` in the manifest. Deep-link URLs are derived from the serial form of the destination.
-
-## Top-level single-activity
-
-- One `Activity` hosting `AppNavHost`.
-- Use `enableEdgeToEdge()` in the Activity + `Modifier.safeDrawingPadding()` at the root composable of each screen.
-- Animations via `composable<T>(enterTransition = { ... }, exitTransition = { ... })`.
+Declare on the destination via `navDeepLink<DestinationType>(basePath = "...")`. The matching `intent-filter` in the manifest must match the host + scheme. Deep-link URLs are derived from the destination's serial form — keep the `@Serializable` field names stable across releases or rebuild deep-link paths.
 
 ## Hard nos
 
-- No string routes (`composable("home")`) in new code.
-- No passing complex objects through nav args — pass ids, let the ViewModel load.
-- No `launchSingleTop = false` with `popUpTo(...) { inclusive = true }` combined with a shared ViewModel — it re-creates the graph VM unexpectedly.
-- No raw `NavBackStackEntry.arguments?.getString("...")` lookups. Use `entry.toRoute<T>()`.
-- No nav from within an effect that can restart (`LaunchedEffect(true)` without a keyed scope) — navigation fires on recomposition and the back stack goes to hell.
+- **No string routes** (`composable("home")`) in new code.
+- **No complex objects in nav args.** Pass IDs; let the destination's ViewModel load.
+- **No `LaunchedEffect(true)`** that calls `navController.navigate(...)` — the effect re-fires on recomposition and the back stack goes to hell. Key the effect properly.
+- **No nav from arbitrary depths** in the composable tree. The Route owns navigation; child composables call up via lambdas.
+- **No multi-Activity navigation.** Single-Activity is a project mandate.
+- **`launchSingleTop = false`** combined with `popUpTo(...) { inclusive = true }` plus a shared ViewModel re-creates the graph VM unexpectedly — flagged if used without comment.

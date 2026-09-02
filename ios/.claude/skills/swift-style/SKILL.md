@@ -1,109 +1,98 @@
 ---
 name: swift-style
-description: Swift coding conventions and idioms enforced on this project. Load whenever writing or reviewing Swift — naming, value vs. reference types, optionals, error handling, concurrency, Sendable, access control, and when to use extensions / protocols / generics.
+description: Project-specific Swift conventions — the rules that aren't already in Apple's API Design Guidelines. Covers the `Outcome<Success>` / `DomainError` boundary contract, typed IDs, use-case naming, the target-layer rules, and the logging privacy contract. Load whenever writing or reviewing Swift in this project.
 ---
 
-# Swift style
+# Swift style (project delta)
 
-## Naming
+For everything not below, [Apple's API Design Guidelines](https://www.swift.org/documentation/api-design-guidelines/) and the [Swift Book](https://docs.swift.org/swift-book/) apply — naming casing, optional handling, extensions, access control, pattern matching, collection idioms. This file only documents where this project's conventions add to or override those defaults.
 
-- `UpperCamelCase` for types (classes, structs, enums, protocols, typealiases).
-- `lowerCamelCase` for functions, methods, properties, enum cases.
-- Boolean getters: `isEmpty`, `hasNext`, `canSubmit`.
-- Protocols: plain nouns (`UserRepository`) or `…ing` / `…able` when they describe a capability (`Encoding`, `Cancellable`).
-- Use cases: verb-based type names (`GetUserProfileUseCase`), exposing a single entry point (`callAsFunction` or `execute`).
+## When this applies
 
-## Value vs. reference types
+The error-handling contract below is **opinionated for this project's scaffold** (`Outcome<Success>` + `DomainError` in `AppCore`, from `/init-ios-app`). On an existing app:
 
-- **Default to `struct`.** Reach for `class` only when you need reference semantics (identity, shared mutable state) or Objective-C interop.
-- **`enum` for closed hierarchies** — ViewState, DomainError, Route. Prefer enums with associated values over type hierarchies of classes.
-- **`actor`** for types that own mutable state accessed from multiple tasks — e.g. a cache, an in-memory database.
+- Codebase uses `throws` + typed errors everywhere → don't refactor to `Outcome` unless the user asks. Apply only the boundary rule: platform errors (`URLError`, `DecodingError`, `NSError`) never cross into the domain.
+- Codebase uses `Result<T, Error>` → same. `Outcome` is this scaffold's choice, not universal Swift practice; don't present it as one.
+- Codebase is pre-Swift-6 (`swiftLanguageMode(.v5)`, no strict concurrency) → the `Sendable` and isolation rules in `swift-concurrency` are advisory, not errors.
+- The naming and logging sections apply regardless of stack.
 
-## Optionals
+## Naming (project-specific)
 
-- Prefer non-optional types. A nullable return should carry meaning.
-- `!` force-unwraps are a smell. Replace with:
-  - `guard let x = foo else { return … }` when the rest of the function can't continue.
-  - `if let x = foo { … }` when the branch matters.
-  - `foo ?? fallback` when there's a sensible default.
-  - `foo.map { … }` / `foo.flatMap { … }` when chaining transforms.
-  - `x!` when you've already `guard`ed or `if let`ed the same thing — just use the unwrapped binding.
-- `try!` is almost always wrong. `try?` is fine when you truly don't care about the error.
+- **Use cases**: verb-based type names suffixed `UseCase` — `GetUserProfileUseCase`, `SubmitOrderUseCase`. One `struct` per business action, exposing a single `callAsFunction` entry point so call sites read `try await submit(draft)`.
+- **Repository protocols** live in `AppCore`; implementations live in `App` and are prefixed `Live` (`OrderRepository` ⇄ `LiveOrderRepository`). Test doubles are prefixed `Stub` / `Fake`.
+- **Views**: `<Feature>RootView` for the stateful container, `<Feature>View` for the stateless presentation half. See `swiftui-views` for the split.
+- **ViewState / ViewAction / ViewEvent**: one per screen, named `<Feature>ViewState` etc.
+- **DTOs**: suffix `DTO` (`OrderDTO`), kept in the data layer next to their `toDomain()` mapper.
 
-## Error handling
+## Typed IDs
 
-- Throw domain errors. Domain-facing functions `throws` a `DomainError` (or return `Result<T, DomainError>`).
-- Map platform errors at the boundary:
+Wrap identifiers that would otherwise be a raw `String` / `Int`:
 
-  ```swift
-  func getOrder(id: OrderID) async throws -> Order {
-      do {
-          return try await api.getOrder(id).toDomain()
-      } catch let error as URLError {
-          throw DomainError.network(error.code)
-      } catch is DecodingError {
-          throw DomainError.invalidResponse
-      } catch {
-          throw DomainError.unknown(error.localizedDescription)
-      }
-  }
-  ```
+```swift
+struct OrderID: Hashable, Sendable { let raw: String }
+struct UserID: Hashable, Sendable { let raw: String }
+```
 
-- `Result<T, DomainError>` is equivalent to `throws` — pick one style per layer and stick with it.
+Catches `get(id: userID)` mix-ups at compile time. Add `ExpressibleByStringLiteral` only if test ergonomics demand it — it reopens the hole for production call sites.
 
-## Concurrency
+## Error-handling contract
 
-- `async` / `await` for one-shot async work.
-- `AsyncSequence` / `AsyncStream` for streams.
-- `Task { }` creates an unstructured task; prefer `async let`, `TaskGroup`, or `.task { }` when possible.
-- `Task.detached` drops actor context — only use when that's intended.
-- `@MainActor` on anything that updates UI state.
-- `Sendable` on types crossing actor boundaries. Add it explicitly when the compiler can't infer it.
-- Use `@unchecked Sendable` sparingly and document the invariant.
-- Cancellation is cooperative: check `Task.checkCancellation()` in long loops; honour `CancellationError`.
+**Domain-facing signatures return `Outcome<Success>`.** The two types are defined once in `AppCore` (`Outcome.swift`, `DomainError.swift` — see `.claude/skills/ios-app-skeleton/references/app-core.md`); every use case, repository method, and view model that needs a typed failure goes through them.
 
-## Extensions
+```swift
+public enum Outcome<Success> {
+    case success(Success)
+    case failure(DomainError)
+}
 
-- Use extensions to:
-  - Add methods to types you don't own (`String`, `URL`).
-  - Break up a large type for readability (main type + extension per protocol conformance).
-- Don't use extensions to hide state. Stored properties live with the main declaration.
+public enum DomainError: Error, Equatable, Sendable {
+    case network(underlying: String? = nil)
+    case unauthorized
+    case notFound
+    case server(code: Int)
+    case unknown(String? = nil)
+}
+```
 
-## Access control
+**Map platform errors at the repository boundary — never above it.** `URLError`, `DecodingError`, `APIError`, and `OSStatus` are data-layer vocabulary:
 
-- `internal` is the default (and usually correct for module-internal APIs).
-- `private` for file-/type-internal helpers.
-- `fileprivate` when a helper is used across types in the same file.
-- `public` / `open` should be deliberate — they pin API shape.
+```swift
+func get(id: OrderID) async -> Outcome<Order> {
+    do {
+        let dto: OrderDTO = try await client.get("/orders/\(id.raw)")
+        return .success(dto.toDomain())
+    } catch let error as URLError {
+        return .failure(.network(underlying: error.localizedDescription))
+    } catch is DecodingError {
+        return .failure(.unknown("invalid response"))
+    } catch {
+        return .failure(.unknown(error.localizedDescription))
+    }
+}
+```
 
-## Collections and iteration
+`try!` and `as!` are review blockers. `try?` is acceptable only where the discarded error genuinely carries no information.
 
-- `[Element]`, `[Key: Value]`, `Set<Element>`. Use these literals.
-- `map`, `filter`, `reduce`, `compactMap`, `flatMap` — prefer over imperative `for` loops when it makes intent clearer.
-- Lazy sequences (`array.lazy.map…`) when you need to avoid materializing intermediates.
+**`CancellationError` is not a domain failure.** A repository that maps it into `.failure(.unknown(...))` turns a cancelled screen into a visible error banner. Let it propagate, or `catch is CancellationError { return }` before the general `catch`. This is the single most common bug this contract prevents, and the reviewer flags it.
 
-## Pattern matching
+## Target boundaries
 
-- `switch` over values whenever the type is an enum — the compiler enforces exhaustiveness.
-- Destructure associated values: `case .loaded(let profile): …`.
-- `if case let .loaded(p) = state { … }` for a single-branch match.
-- Use `where` clauses for compound conditions.
+The scaffold is three SPM targets with one dependency direction: `AppCore` ← `AppFeatures` ← `App`.
 
-## Functions
+- **`AppCore` imports Foundation and nothing else.** No SwiftUI, no UIKit, no URLSession, no SwiftData, no Security. An `import` of any of those in `AppCore` is a layer violation, not a style nit.
+- **`AppFeatures` depends on protocols only.** `URLSessionAPIClient` and `KeychainStoreLive` live in `App` precisely so a feature cannot reach for them by accident.
+- **`App` is the composition root** — the only place that constructs the object graph. See `ios-di`.
 
-- Default parameters > overload explosions.
-- Argument labels help readability: `func move(from source: Point, to destination: Point)`.
-- Prefer small functions; if a function is 50+ lines, it's doing too much.
+## Sealed hierarchies in this project
+
+Three enums the codebase relies on — don't reinvent them:
+
+- `Outcome<Success>` — every domain-facing result.
+- `DomainError` — every domain-facing failure.
+- `<Feature>ViewState` — every screen's state machine. Branches are `loading` / `error` / `loaded` by convention; add more only when the screen genuinely has them.
 
 ## Logging
 
-- Use `Logger` from `os`: `private let log = Logger(subsystem: "com.example.app", category: "Network")`.
-- No `print()` in production code paths.
-- Redact PII in logs: `logger.log("user id=\(id, privacy: .private)")`.
-
-## Common pitfalls
-
-- **Retain cycles in closures:** use `[weak self]` in long-lived closures stored on `self`.
-- **Force-casts:** `as!` is as bad as `!`. Use `as?` + fallback.
-- **`AnyObject`:** rarely the right abstraction. Use protocols.
-- **Global state:** Swift makes it easy; resist. Inject dependencies.
+- `Logger` from `os`, scoped per subsystem + category: `private let log = Logger(subsystem: "com.example.app", category: "Network")`.
+- **No `print()` on a production code path.** The reviewer flags it.
+- **Privacy modifiers are not optional.** Interpolated values default to `.private` for non-numeric types, but be explicit at every site that touches user data: `log.debug("user id=\(id, privacy: .private)")`. `%{public}@` / `privacy: .public` is for stable, non-identifying strings only — never a token, email, or URL carrying query parameters.

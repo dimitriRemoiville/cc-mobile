@@ -165,7 +165,7 @@ Pick one per feature, don't mix.
 
 ## Testing
 
-Keep a single concept per test. See `.claude/skills/flutter-testing/SKILL.md`. Rough template:
+Keep a single concept per test. See `${CLAUDE_PLUGIN_ROOT}/skills/flutter-testing/SKILL.md`. Rough template:
 
 ```dart
 blocTest<SearchBloc, SearchState>(

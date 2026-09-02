@@ -14,7 +14,8 @@ import io.mockk.coEvery
 import io.mockk.mockk
 import io.mockk.verify
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
@@ -29,17 +30,21 @@ import {{PACKAGE_ID}}.feed.domain.model.FeedItem
 import {{PACKAGE_ID}}.feed.domain.usecase.GetFeedUseCase
 
 class FeedViewModelTest {
-    @Before fun setup() { Dispatchers.setMain(UnconfinedTestDispatcher()) }
+    private val testDispatcher = StandardTestDispatcher()
+
+    @Before fun setup() { Dispatchers.setMain(testDispatcher) }
     @After fun tearDown() { Dispatchers.resetMain() }
 
     @Test
-    fun `emits Success after init`() = runTest {
+    fun `emits Loading then Success after init`() = runTest(testDispatcher) {
         val getFeed = mockk<GetFeedUseCase>()
         coEvery { getFeed() } returns Outcome.Success(listOf(FeedItem("1", "hello")))
         val analytics = mockk<AnalyticsTracker>(relaxed = true)
 
         val vm = FeedViewModel(getFeed, analytics)
         vm.state.test {
+            assertEquals(FeedUiState.Loading, awaitItem())
+            advanceUntilIdle()
             assertEquals(
                 FeedUiState.Success(listOf(FeedItem("1", "hello"))),
                 awaitItem(),
@@ -49,12 +54,13 @@ class FeedViewModelTest {
     }
 
     @Test
-    fun `tracks FeedViewed on init`() {
+    fun `tracks FeedViewed on init`() = runTest(testDispatcher) {
         val getFeed = mockk<GetFeedUseCase>()
         coEvery { getFeed() } returns Outcome.Success(emptyList())
         val analytics = mockk<AnalyticsTracker>(relaxed = true)
 
         FeedViewModel(getFeed, analytics)
+        advanceUntilIdle()
 
         verify(exactly = 1) { analytics.track(AnalyticsEvent.FeedViewed) }
     }
@@ -71,7 +77,8 @@ import io.mockk.coEvery
 import io.mockk.mockk
 import io.mockk.verify
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
@@ -86,11 +93,13 @@ import {{PACKAGE_ID}}.profile.domain.model.ProfileInfo
 import {{PACKAGE_ID}}.profile.domain.usecase.GetProfileUseCase
 
 class ProfileViewModelTest {
-    @Before fun setup() { Dispatchers.setMain(UnconfinedTestDispatcher()) }
+    private val testDispatcher = StandardTestDispatcher()
+
+    @Before fun setup() { Dispatchers.setMain(testDispatcher) }
     @After fun tearDown() { Dispatchers.resetMain() }
 
     @Test
-    fun `emits Success after init`() = runTest {
+    fun `emits Loading then Success after init`() = runTest(testDispatcher) {
         val info = ProfileInfo(userName = "guest", email = "g@e.com", avatarUrl = null)
         val getProfile = mockk<GetProfileUseCase>()
         coEvery { getProfile() } returns Outcome.Success(info)
@@ -98,13 +107,15 @@ class ProfileViewModelTest {
 
         val vm = ProfileViewModel(getProfile, analytics)
         vm.state.test {
+            assertEquals(ProfileUiState.Loading, awaitItem())
+            advanceUntilIdle()
             assertEquals(ProfileUiState.Success(info), awaitItem())
             cancelAndIgnoreRemainingEvents()
         }
     }
 
     @Test
-    fun `tracks ProfileViewed on init`() {
+    fun `tracks ProfileViewed on init`() = runTest(testDispatcher) {
         val getProfile = mockk<GetProfileUseCase>()
         coEvery { getProfile() } returns Outcome.Success(
             ProfileInfo("guest", "g@e.com", null),
@@ -112,6 +123,7 @@ class ProfileViewModelTest {
         val analytics = mockk<AnalyticsTracker>(relaxed = true)
 
         ProfileViewModel(getProfile, analytics)
+        advanceUntilIdle()
 
         verify(exactly = 1) { analytics.track(AnalyticsEvent.ProfileViewed) }
     }

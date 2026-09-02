@@ -1,156 +1,84 @@
 ---
 name: swift-concurrency
-description: Swift 6 strict concurrency patterns — actors, Sendable, @MainActor discipline, structured concurrency, cancellation, task trees, AsyncSequence, avoiding data races. Load whenever touching async code, cross-actor boundaries, or long-running work.
+description: Project-specific Swift 6 concurrency rules — the isolation map this codebase uses (`@MainActor` view models, `actor` repositories, `Sendable` domain types), the cancellation contract, the approachable-concurrency opt-in, and the hard nos the reviewer enforces. Load whenever touching async code, cross-actor boundaries, or long-running work.
 ---
 
-# Swift concurrency
+# Swift concurrency (project delta)
 
-Baseline: Swift 6 with strict concurrency enabled. Build failures here are design failures — don't silence with `@unchecked Sendable` unless you understand why.
+For concurrency fundamentals — how `actor` isolation works, what `Sendable` means, `async let` vs `TaskGroup`, `AsyncStream` construction, how cancellation propagates — read [Apple's Swift Concurrency documentation](https://developer.apple.com/documentation/swift/concurrency) and the [Swift 6 migration guide](https://www.swift.org/migration/documentation/migrationguide/). This file documents only this project's decisions.
 
-## Isolation model
+## When this applies
 
-- Views (`View`), ViewModels, coordinators -> `@MainActor`.
-- Repositories -> `actor`.
-- Pure value-types crossing boundaries -> `Sendable`.
-- Reference types crossing boundaries -> actor, final class with a lock, or `@unchecked Sendable` + a documented invariant.
+**Swift 6 language mode with strict concurrency on** — the floor `/init-ios-app` scaffolds. On an existing app:
+
+- **Swift 5 language mode** (`swiftLanguageMode(.v5)`, or `SWIFT_STRICT_CONCURRENCY` unset / `minimal`) → the isolation rules below are advisory. Report `Sendable` gaps as risks, not as build errors, and don't propose a mode flip as a side effect of an unrelated change — it's its own migration.
+- **Combine-based codebase** (`AnyCancellable`, `PassthroughSubject`, `.sink` stored in `cancellables`) → don't rewrite to async/await unasked. Apply the isolation and cancellation principles to whatever new async code is being added, and leave the Combine graph alone.
+- **UIKit + `DispatchQueue`** → the "no `DispatchQueue.main.async`" rule is for new SwiftUI code. Legacy UIKit call sites stay as they are until someone migrates them deliberately.
+
+## The isolation map
+
+Every type in this codebase falls into one of four buckets. Deviating from the map needs a reason in the PR description:
+
+| Kind | Isolation | Why |
+|---|---|---|
+| `View`, view models, coordinators | `@MainActor` | They read or write UI state. |
+| Repositories that own mutable state (caches, contexts) | `actor` | Serialized access without a lock. |
+| Repositories that are stateless pass-throughs | `struct` + `Sendable` | Nothing to protect; don't pay for an actor hop. |
+| Domain models (`AppCore`) | `Sendable` value types | They cross every boundary. |
 
 ```swift
-actor OrderRepository {
-    private var cache: [String: Order] = [:]
-    private let client: APIClient
-
-    init(client: APIClient) { self.client = client }
-
-    func load(id: String) async throws -> Order {
-        if let cached = cache[id] { return cached }
-        let order = try await client.fetch(Order.self, id: id)
-        cache[id] = order
-        return order
-    }
-}
-
 @Observable @MainActor
 final class OrderDetailViewModel {
+    private(set) var state: OrderDetailViewState = .loading
     private let repo: OrderRepository
-    var state: ViewState = .idle
 
     init(repo: OrderRepository) { self.repo = repo }
 
-    func load(id: String) async {
+    func load(id: OrderID) async {
         state = .loading
-        do { state = .ready(try await repo.load(id: id)) }
-        catch is CancellationError { return }
-        catch { state = .error(error) }
-    }
-}
-```
-
-## Sendable
-
-`struct` of `Sendable` members is automatically `Sendable`. Mark explicitly when you cross a module boundary:
-
-```swift
-public struct Order: Sendable, Equatable, Identifiable {
-    public let id: String
-    public let totalCents: Int
-}
-```
-
-For closures, `@Sendable` both documents and enforces:
-
-```swift
-func run(_ work: @Sendable () async -> Void) async { await work() }
-```
-
-## @MainActor discipline
-
-- The view and its state are main-actor.
-- The moment you hop off the main actor, you're in another isolation domain. You cannot mutate view state from inside an `actor` call — return the value and let the main-actor caller write it.
-- Avoid `Task { @MainActor in }` scattered throughout the body — structure the flow so the main actor calls into a repo and writes state on return:
-
-```swift
-// Good
-.task { await viewModel.load(id: id) }
-
-// Avoid
-.onAppear {
-    Task { @MainActor in
-        let v = await repo.load(id: id)
-        viewModel.state = .ready(v)
-    }
-}
-```
-
-## Structured concurrency
-
-Use `async let` and `TaskGroup` for parallel work; avoid `Task { ... }` when you can, because it detaches from cancellation.
-
-```swift
-func loadDashboard() async throws -> Dashboard {
-    async let orders = repo.fetchOrders()
-    async let balance = repo.fetchBalance()
-    async let notifications = repo.fetchNotifications()
-    return Dashboard(
-        orders: try await orders,
-        balance: try await balance,
-        notifications: try await notifications,
-    )
-}
-```
-
-For a dynamic set of parallel tasks:
-
-```swift
-try await withThrowingTaskGroup(of: Order.self) { group in
-    for id in ids { group.addTask { try await repo.load(id: id) } }
-    var result: [Order] = []
-    for try await order in group { result.append(order) }
-    return result
-}
-```
-
-## Cancellation
-
-- Every `async` function that does meaningful work should respect cancellation via `try Task.checkCancellation()` at loop boundaries.
-- `URLSession.data(for:)`, most `AsyncSequence`, and standard library awaits are already cooperative.
-- A `Task` cancelled by the caller **does not throw** unless the awaiting function checks. Don't swallow `CancellationError` silently — re-throw or `return`.
-
-```swift
-for id in ids {
-    try Task.checkCancellation()
-    try await repo.load(id: id)
-}
-```
-
-In SwiftUI, `.task(id:)` auto-cancels when the id changes or view disappears. Use it.
-
-## AsyncSequence
-
-For push-style data (sockets, Combine bridges, Core Motion), expose `AsyncStream` or `AsyncSequence`:
-
-```swift
-actor OrderLiveFeed {
-    func stream() -> AsyncStream<OrderEvent> {
-        AsyncStream { continuation in
-            let subscription = source.subscribe { continuation.yield($0) }
-            continuation.onTermination = { _ in subscription.cancel() }
+        switch await repo.get(id: id) {
+        case .success(let order): state = .loaded(order)
+        case .failure(let error): state = .error(error)
         }
     }
 }
 ```
 
-Consume:
+**Write UI state on the main actor, not from inside the actor call.** The repository returns a value; the `@MainActor` caller assigns it. A repository that reaches back to mutate view state is the bug this map exists to prevent.
+
+## `@MainActor` discipline
+
+The rule that gets violated most: **don't scatter `Task { @MainActor in }` through view bodies.** Structure the flow so the main-actor function awaits and assigns on return.
 
 ```swift
-.task {
-    for await event in repo.stream() { viewModel.apply(event) }
+// Good — the view's lifecycle owns the task, cancellation is automatic
+.task { await viewModel.load(id: id) }
+
+// Avoid — detached from the view's lifecycle, and the hop is manual
+.onAppear {
+    Task { @MainActor in
+        viewModel.state = .loaded(await repo.load(id: id))
+    }
 }
 ```
 
-## Swift 6.2 approachable concurrency
+## Cancellation contract
 
-- A module can opt into "single-threaded by default" via the `ApproachableConcurrency` upcoming feature; most of our app modules do.
-- Mark CPU-bound offloading **explicitly** with `@concurrent`:
+- `.task { }` and `.task(id:)` cancel when the view disappears or the id changes. **Use them; don't hand-roll a `Task` in `onAppear`.**
+- A cancelled `Task` **does not throw on its own** — the awaiting function has to check. Put `try Task.checkCancellation()` at the top of every loop iteration that does real work.
+- **Never swallow `CancellationError`.** `catch { state = .error(...) }` on a cancelled screen paints a visible error banner over a screen the user already left. Catch it separately and `return`:
+
+```swift
+do { state = .loaded(try await repo.load(id: id)) }
+catch is CancellationError { return }
+catch { state = .error(error) }
+```
+
+`swift-style` states the same rule from the error-contract side. It's the most common concurrency bug in this codebase.
+
+## Approachable concurrency (Swift 6.2)
+
+App modules opt into the `ApproachableConcurrency` upcoming feature — single-threaded by default, so ordinary code doesn't need isolation annotations. The consequence: **offloading is explicit**. Mark CPU-bound work with `@concurrent`:
 
 ```swift
 @concurrent func parseLargeJSON(_ data: Data) throws -> ParsedModel {
@@ -158,20 +86,13 @@ Consume:
 }
 ```
 
-- `@MainActor` types can conform to protocols with `isolated` conformance when needed (e.g., `Equatable` with main-actor captured state).
-
-## Avoiding traps
-
-- `Task { [weak self] in ... }` is rarely right. Actors don't hold `self` across `await` the way classes do; prefer structured tasks owned by the view's lifecycle.
-- Don't bridge Combine and Swift Concurrency casually. `AsyncPublisher` is fine for consuming a publisher once; for two-way state, pick one model.
-- Don't catch every error with `catch {}`. Catch `is CancellationError` separately to not break cancellation propagation.
-- Don't lock inside an `actor` — defeats the purpose.
+If a module hasn't opted in, don't add `@concurrent` to it — the attribute means something different under the older defaults.
 
 ## Hard nos
 
-- No `Task.detached { ... }` without a documented reason (detached tasks don't inherit priority, actor, or task-local values).
-- No `DispatchQueue.main.async` in new code — use `await MainActor.run { ... }` or, better, isolate the surrounding function.
-- No `@unchecked Sendable` without a written invariant in a comment.
-- No `nonisolated(unsafe)` without the same.
-- No `semaphore.wait()` on the main thread.
-- No `runBlocking`-style synchronous bridges from async code (`Task { ... }.result.get()` synchronously).
+- **No `Task.detached`** without a documented reason. It drops priority, actor context, and task-locals — usually silently.
+- **No `DispatchQueue.main.async`** in new code. Isolate the surrounding function `@MainActor`, or `await MainActor.run { }` if you can't.
+- **No `@unchecked Sendable`** or `nonisolated(unsafe)` without a written invariant in a comment saying what makes it safe.
+- **No `semaphore.wait()` on the main thread**, and no synchronous bridges out of async code (`Task { }.result.get()` from a sync context).
+- **No locks inside an `actor`** — the actor already is the lock.
+- **No casual Combine ↔ concurrency bridging.** `AsyncPublisher` is fine for consuming a publisher once; for two-way state, pick one model per feature.

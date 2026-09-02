@@ -1,143 +1,109 @@
 ---
 name: navigation-stack
-description: NavigationStack patterns for this iOS project — typed destinations via Hashable enums, path binding, deep links, sheet/presentation coordination, programmatic pop, tab-embedded stacks. Load whenever adding a screen or navigation transition.
+description: Project-specific NavigationStack conventions — typed `Hashable` destinations, one `.navigationDestination` at the stack root, deep links as path mutations, per-tab paths, and the sheet-vs-push rule. Load whenever adding a screen, a navigation transition, or a deep link.
 ---
 
-# NavigationStack
+# NavigationStack (project delta)
 
-## Why not NavigationView
+For `NavigationStack` fundamentals — path bindings, `navigationDestination(for:)` mechanics, `NavigationSplitView`, sheet presentation — read [Apple's NavigationStack documentation](https://developer.apple.com/documentation/swiftui/navigationstack). This file documents only this project's decisions.
 
-`NavigationView` is deprecated for stacks. `NavigationStack` gives:
-- Typed destinations via `.navigationDestination(for:)`.
-- A writable `path` binding for programmatic navigation + deep links.
-- Proper back stack state (no silent invalidation on iOS 16+).
+## When this applies
+
+`NavigationStack` with typed `Hashable` destinations (iOS 16+). On an existing app:
+
+- **`NavigationView`** → deprecated, but migrating is its own change. Don't fold it into an unrelated PR; flag it and move on.
+- **UIKit `UINavigationController` / coordinators** → skip this skill. The typed-route principle transfers; the API doesn't.
+- **`NavigationLink(destination:)` push-by-view throughout** → the codebase chose view-based navigation. Apply the typed shape to *new* destinations rather than rewriting the existing graph.
+- **TCA / a third-party router** (`@Reducer` navigation, `NavigationStackStore`, FlowStacks) → that library owns routing; skip.
 
 ## Typed destinations
 
-Model routes as an enum conforming to `Hashable`:
+Routes are an enum conforming to `Hashable` — **never a `String`, never `AnyHashable`**:
 
 ```swift
-enum AppRoute: Hashable {
-    case orderDetail(id: String)
+enum Destination: Hashable {
+    case orderDetail(id: OrderID)
     case search(initialQuery: String)
     case settings
     case legal(LegalPage)
 }
-
-enum LegalPage: Hashable { case privacy, terms }
 ```
 
-Bind with `.navigationDestination(for:)`:
+**One `.navigationDestination(for:)` per type, installed unconditionally at the root of the stack.** Scattering them per-screen, or putting one inside an `if` branch, makes resolution order unpredictable — SwiftUI only sees destinations registered on the visible path.
 
 ```swift
-struct AppRootView: View {
-    @State private var path: [AppRoute] = []
-    @Environment(\.diContainer) private var container
-
-    var body: some View {
-        NavigationStack(path: $path) {
-            HomeView(onOpenOrder: { id in path.append(.orderDetail(id: id)) })
-                .navigationDestination(for: AppRoute.self) { route in
-                    switch route {
-                    case .orderDetail(let id): OrderDetailView(viewModel: container.orderDetailViewModel(id: id))
-                    case .search(let q):       SearchView(viewModel: container.searchViewModel(initial: q))
-                    case .settings:            SettingsView()
-                    case .legal(let page):     LegalView(page: page)
-                    }
-                }
+NavigationStack(path: $path) {
+    HomeRootView(onOpenOrder: { path.append(.orderDetail(id: $0)) })
+        .navigationDestination(for: Destination.self) { destination in
+            switch destination {
+            case .orderDetail(let id): OrderDetailRootView(id: id, container: container)
+            case .search(let q):       SearchRootView(initialQuery: q, container: container)
+            case .settings:            SettingsRootView()
+            case .legal(let page):     LegalView(page: page)
+            }
         }
-    }
 }
 ```
 
-One `.navigationDestination(for:)` per type, installed at the root of the stack. Don't scatter them per view — the resolution order becomes unpredictable.
+**The root composes the graph; screens don't know it.** A feature view receives a closure for what it can navigate to (`onOpenOrder:`), not the path binding. That's what keeps features independent of each other.
 
-## Push / pop
+The scaffolded `Navigation/Destination.swift` in `.claude/skills/ios-app-skeleton/references/app-features.md` is the canonical starting point.
 
-```swift
-path.append(.orderDetail(id: "abc"))    // push
-_ = path.popLast()                       // pop
-path.removeAll()                         // pop to root
-```
-
-Path is just a mutable array. Treat it as one.
-
-## Sheets vs push
-
-- Use push for hierarchical drill-in (list -> detail -> edit).
-- Use `.sheet(item:)` for modal flows (compose email, confirm payment) that can be dismissed with a gesture.
-- Nested flows inside a sheet get their own `NavigationStack`, with their own path. Don't try to share.
+## Path is an array
 
 ```swift
-@State private var composing: ComposeDraft?
-
-// in body:
-.sheet(item: $composing) { draft in
-    NavigationStack { ComposeView(draft: draft) }
-}
+path.append(.orderDetail(id: id))   // push
+_ = path.popLast()                  // pop
+path.removeAll()                    // pop to root
+path = [.orderDetail(id: id), .receipt(id: id)]   // multi-step deep link
 ```
+
+Treat it as ordinary state. There's no navigation API to learn beyond array mutation.
 
 ## Deep links
 
-Deep links become path append operations:
+Deep links are path mutations, and the URL→route parsing lives in **its own file** (`Destination+URL.swift`), not in a view:
 
 ```swift
 .onOpenURL { url in
-    guard let route = AppRoute(url: url) else { return }
-    path.append(route)
+    guard let destination = Destination(url: url) else { return }
+    path.append(destination)
 }
 ```
 
-For multi-step deep links, push multiple entries:
+Keeping `init?(url:)` out of the UI means link rules are unit-testable without a view.
 
-```swift
-case "order-receipt":
-    let id = url.pathComponents[2]
-    path = [.orderDetail(id: id), .receipt(id: id)]
-```
+## Sheets vs push
 
-`AppRoute.init(url:)` lives in its own file so linking rules don't bleed into the UI.
+- **Push** for hierarchical drill-in: list → detail → edit.
+- **`.sheet(item:)`** for modal flows the user can abandon with a gesture: compose, confirm payment, onboarding.
+- A flow inside a sheet gets **its own `NavigationStack` and its own path**. Don't try to share the parent's.
+- **One sheet binding per screen**, driven by a state enum describing which sheet is showing. Chained `.sheet` modifiers fight each other.
 
 ## Tab-embedded stacks
 
-One `NavigationStack` per tab, each with its own path. Use `TabView(selection:)` to track the active tab; the paths are independent state.
+One `NavigationStack` per tab, each with an independent path. `TabView(selection:)` tracks the active tab; the paths are separate `@State` values and must stay that way — a shared path across tabs loses each tab's history.
+
+## Cross-cutting navigation
+
+When navigation has to be driven from outside the view tree (a widget intent, a push notification, a deep link handled at app level), put the paths in an `@Observable @MainActor` navigator injected from the composition root:
 
 ```swift
-struct RootTabs: View {
-    @State private var selection: Tab = .home
-    @State private var homePath: [AppRoute] = []
-    @State private var cartPath: [AppRoute] = []
-
-    var body: some View {
-        TabView(selection: $selection) {
-            NavigationStack(path: $homePath) { HomeRoot() }.tabItem { /* ... */ }.tag(Tab.home)
-            NavigationStack(path: $cartPath) { CartRoot() }.tabItem { /* ... */ }.tag(Tab.cart)
-        }
-    }
+@Observable @MainActor
+final class AppNavigator {
+    var homePath: [Destination] = []
+    func openOrder(_ id: OrderID) { homePath = [.orderDetail(id: id)] }
 }
 ```
-
-## Observable navigation (iOS 18+)
-
-For cross-cutting navigation state (e.g., handle an intent from a widget), store the path in an `@Observable` coordinator:
-
-```swift
-@Observable @MainActor final class AppNavigator {
-    var homePath: [AppRoute] = []
-    func openOrder(_ id: String) { homePath = [.orderDetail(id: id)] }
-}
-```
-
-Inject and call from the URL handler or a `UNUserNotificationCenterDelegate`.
 
 ## Testing
 
-For UI tests, `accessibilityIdentifier` on each destination-producing element. For view-model testing, there's nothing to test about `NavigationStack` itself — test that the coordinator mutates its path.
+There is nothing to test about `NavigationStack` itself. Test that `Destination(url:)` parses correctly, and that the navigator mutates its path as expected. For UI tests, put an `accessibilityIdentifier` on every element that produces a destination.
 
 ## Hard nos
 
-- No `NavigationLink(destination:)` value-less variants in new code (push-by-view makes the back stack opaque).
-- No path of `AnyHashable` when you can model routes with an enum.
-- No `.sheet` inside `.sheet` chained through bindings — use one sheet with a state enum describing which sheet is showing.
-- No triggering navigation from inside a `.task { ... }` that restarts on state changes; pin it to `.task(id:)`.
-- No putting `.navigationDestination(for:)` inside `if` branches; install unconditionally at the root.
+- **No `NavigationLink(destination:)`** value-less variants in new code — push-by-view makes the back stack opaque and unaddressable by deep links.
+- **No `[AnyHashable]` path** when the routes can be an enum.
+- **No `.navigationDestination(for:)` inside a conditional** or on a child screen.
+- **No `.sheet` chained inside another `.sheet`** through bindings.
+- **No navigation triggered from a `.task { }`** that restarts on state changes — pin it to `.task(id:)`.

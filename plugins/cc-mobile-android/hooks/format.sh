@@ -2,8 +2,8 @@
 # .claude/hooks/format.sh — PostToolUse formatter for Kotlin.
 #
 # Runs ktlint -F on the file Claude just edited or wrote. Best-effort: never
-# fails the tool call. Prefer the local ktlint binary; fall back to the
-# Gradle task if the project ships one; otherwise quietly skip.
+# fails the tool call. Prefer the local ktlint binary; if it's unavailable,
+# print a hint about `./gradlew ktlintFormat` and otherwise quietly skip.
 #
 # Hook contract: Claude Code passes the tool input as JSON on stdin
 # ({"tool_name": "...", "tool_input": {"file_path": "..."}, ...}). The legacy

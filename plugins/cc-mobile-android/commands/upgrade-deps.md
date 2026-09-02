@@ -12,7 +12,7 @@ Upgrade dependencies declared in `gradle/libs.versions.toml`. Resolution is done
 
 1. Locate `gradle/libs.versions.toml`. Bail if it doesn't exist (this command requires a version catalog; hand off to `android-build-expert` if the project predates one).
 
-2. **Resolve the latest stable for each `[versions]` ref by `WebFetch`-ing its `maven-metadata.xml`** (reuse the URL table from `.claude/commands/init-android-app.md` → "Phase 1.5"). Filter out any `-alpha`, `-beta`, `-RC`, `-rc`, `-dev`, `-SNAPSHOT`, `-eap` suffixes. For `ksp`, filter to versions starting with the resolved Kotlin version (KSP is `<kotlinVersion>-<kspPatch>`). The `kotlin-compose` plugin rides the `kotlin` ref — no separate fetch.
+2. **Resolve the latest stable for each `[versions]` ref by `WebFetch`-ing its `maven-metadata.xml`** (reuse the URL table from `${CLAUDE_PLUGIN_ROOT}/commands/init-android-app.md` → "Phase 1.5"). Filter out any `-alpha`, `-beta`, `-RC`, `-rc`, `-dev`, `-SNAPSHOT`, `-eap` suffixes. For `ksp`, filter to versions starting with the resolved Kotlin version (KSP is `<kotlinVersion>-<kspPatch>`). The `kotlin-compose` plugin rides the `kotlin` ref — no separate fetch.
    - **Optional speedup:** if the project ships `com.github.ben-manes.versions` (the Ben-Manes "gradle-versions-plugin"), you can run `./gradlew dependencyUpdates -DoutputFormatter=plain -Drevision=release` instead. Treat its output as a hint, not a substitute — still verify with `maven-metadata.xml` because the plugin is sometimes a release behind.
 
 3. Build a proposed diff for `libs.versions.toml`:
@@ -20,7 +20,7 @@ Upgrade dependencies declared in `gradle/libs.versions.toml`. Resolution is done
    - Skip any version line that has a trailing `# pin: <reason>` comment.
    - Group by area in the output: AndroidX, Kotlin / KSP / Compose compiler, Compose BOM, Hilt, Firebase, testing, other.
 
-4. **Sanity-check against the skeleton's "Compatibility traps" table** (`.claude/skills/android-app-skeleton/SKILL.md` → "Compatibility traps"). If a proposed bump would land in a known trap (e.g. AGP 9 + Hilt < 2.59 / Compose Compiler plugin missing on a Compose module), surface the trap in the diff and pick the next compatible version.
+4. **Sanity-check against the skeleton's "Compatibility traps" table** (`${CLAUDE_PLUGIN_ROOT}/skills/android-app-skeleton/references/root-files.md` → "Compatibility traps"). If a proposed bump would land in a known trap (e.g. AGP 9 + Hilt < 2.59 / Compose Compiler plugin missing on a Compose module), surface the trap in the diff and pick the next compatible version.
 
 5. **Dry-run (default)**: print the proposed `toml` diff to the user. Stop. Ask: "Apply?"
 

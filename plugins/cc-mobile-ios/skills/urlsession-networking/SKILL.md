@@ -1,89 +1,67 @@
 ---
 name: urlsession-networking
-description: Networking patterns for this project — URLSession + async/await + Codable, endpoint definitions, error mapping, auth interceptors via delegates, and how networking fits into the repository. Load when adding or editing any API call, request interceptor, or Codable model.
+description: Project-specific networking conventions — the `APIClient` protocol boundary, DTO/domain separation, where `APIError` stops and `DomainError` starts, the `AuthTokenProvider` contract, and the `URLProtocol` testing seam. Load when adding or editing any API call, request interceptor, or `Codable` model.
 ---
 
-# Networking (URLSession + async/await)
+# Networking (project delta)
+
+For URLSession fundamentals — `data(for:)`, `URLRequest` construction, `URLComponents`, `Codable` / `JSONDecoder` strategies, `URLSessionConfiguration` — read [Apple's URL Loading System documentation](https://developer.apple.com/documentation/foundation/url_loading_system). This file documents only this project's decisions. The canonical `URLSessionAPIClient` template lives in `${CLAUDE_PLUGIN_ROOT}/skills/ios-app-skeleton/references/app-target.md`.
+
+## When this applies
+
+`URLSession` + `async`/`await` + `Codable`, behind an `APIClient` protocol. On an existing app:
+
+- **Alamofire** (`import Alamofire`, `AF.request`, `Session`) → skip the client shape below. The framework-agnostic rules still hold: one injected client protocol, DTOs separate from domain models, errors mapped at the repository boundary.
+- **Apollo / GraphQL** (`import Apollo`) → generated query types replace DTOs; the repository still maps into `Outcome<T>` and `DomainError`.
+- **Moya** → same as Alamofire; the `TargetType` enum is that project's endpoint definition, don't replace it.
+- **A hand-rolled client that isn't behind a protocol** → the testability argument is worth making, but retrofitting the seam is its own change, not a drive-by.
 
 ## The pipeline
 
 ```
-Domain.Repository       # domain types only
-      ↓
-Data.RepositoryImpl     # calls client, maps, throws DomainError
-      ↓
-Data.Remote.APIClient   # URLSession wrapper, JSON encode/decode
-      ↓
-URLSession              # system networking
+AppCore.Repository protocol      # domain types, returns Outcome<T>
+        ↓
+App.LiveRepository               # calls the client, maps DTO → domain, APIError → DomainError
+        ↓
+App.URLSessionAPIClient          # URLSession wrapper, JSON encode/decode, auth header
+        ↓
+URLSession                       # system networking
 ```
 
-Network errors are **mapped to `DomainError` at the repository boundary**. Nothing higher up should know about `URLError` or `DecodingError`.
+**`APIClient` is a protocol in `AppCore`; only `App` knows `URLSession` exists.** That's the seam that makes `AppFeatures` testable without a network stub.
 
-## APIClient
+## Where errors stop
 
-A small, focused wrapper — not an HTTP framework.
+**`APIError` is a data-layer type and never crosses into the domain.** It may carry status codes and `URLError`s; `DomainError` may not.
 
 ```swift
-protocol APIClient: Sendable {
-    func get<T: Decodable>(_ path: String, query: [URLQueryItem]) async throws -> T
-    func post<T: Decodable, B: Encodable>(_ path: String, body: B) async throws -> T
-}
-
-final class LiveAPIClient: APIClient {
-    private let baseURL: URL
-    private let session: URLSession
-    private let decoder: JSONDecoder
-    private let encoder: JSONEncoder
-    private let auth: AuthTokenProvider
-
-    init(
-        baseURL: URL,
-        session: URLSession = .shared,
-        decoder: JSONDecoder = .api,
-        encoder: JSONEncoder = .api,
-        auth: AuthTokenProvider
-    ) {
-        self.baseURL = baseURL
-        self.session = session
-        self.decoder = decoder
-        self.encoder = encoder
-        self.auth = auth
-    }
-
-    func get<T: Decodable>(_ path: String, query: [URLQueryItem] = []) async throws -> T {
-        var components = URLComponents(url: baseURL.appending(path: path), resolvingAgainstBaseURL: false)!
-        components.queryItems = query.isEmpty ? nil : query
-        var request = URLRequest(url: components.url!)
-        request.httpMethod = "GET"
-        try await addAuth(&request)
-        return try await perform(request)
-    }
-
-    func post<T: Decodable, B: Encodable>(_ path: String, body: B) async throws -> T {
-        var request = URLRequest(url: baseURL.appending(path: path))
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try encoder.encode(body)
-        try await addAuth(&request)
-        return try await perform(request)
-    }
-
-    private func addAuth(_ request: inout URLRequest) async throws {
-        if let token = try await auth.current() {
-            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+private func map(_ error: APIError) -> DomainError {
+    switch error {
+    case .invalidResponse:       return .unknown("invalid response")
+    case .status(let code, _):
+        switch code {
+        case 401:      return .unauthorized
+        case 404:      return .notFound
+        case 500...599: return .server(code: code)
+        default:       return .unknown("HTTP \(code)")
         }
     }
-
-    private func perform<T: Decodable>(_ request: URLRequest) async throws -> T {
-        let (data, response) = try await session.data(for: request)
-        guard let http = response as? HTTPURLResponse else { throw APIError.invalidResponse }
-        guard (200..<300).contains(http.statusCode) else {
-            throw APIError.status(code: http.statusCode, body: data)
-        }
-        return try decoder.decode(T.self, from: data)
-    }
 }
+```
 
+A `URLError` or `DecodingError` reaching a view model is a bug the reviewer flags every time. So is a repository that maps `CancellationError` into a failure — see `swift-style`.
+
+## DTOs
+
+Named `…DTO`, `Decodable` + `Sendable`, living in the data layer, **never exposed upward**.
+
+- **Nullability reflects the wire format, not what the domain wants.** If the server can omit it, the DTO field is optional and the mapper decides the domain default.
+- **Mapping is a one-way `toDomain()`** function in an extension next to the DTO. No shared `Mapper` protocol — it buys nothing.
+- Unknown enum values: give the DTO enum a fallback case, or let the decoder throw and handle it at the boundary. Don't crash on an server-side addition.
+
+Decoder configuration is shared, not per-call:
+
+```swift
 extension JSONDecoder {
     static let api: JSONDecoder = {
         let d = JSONDecoder()
@@ -94,80 +72,9 @@ extension JSONDecoder {
 }
 ```
 
-`APIError` is a data-layer error (leaks `URLError`, status codes). It does **not** cross into the domain.
-
-## DTOs
-
-Separate from domain models. Named `…DTO`. `Codable`, `Sendable`:
-
-```swift
-struct OrderDTO: Decodable, Sendable {
-    let id: String
-    let items: [OrderItemDTO]
-    let totalCents: Int
-    let createdAt: Date  // decoded via .iso8601
-}
-```
-
-Rules:
-- Nullability reflects the wire format, not what the domain wants.
-- Unknown enum values? Use a fallback case or let the decoder throw and handle at the boundary.
-- Keep DTOs in the data layer — never expose them upward.
-
-## Mapping DTO → domain
-
-One-way functions as extensions or module-scoped functions:
-
-```swift
-extension OrderDTO {
-    func toDomain() -> Order {
-        Order(
-            id: OrderID(id),
-            items: items.map { $0.toDomain() },
-            total: .cents(totalCents),
-            createdAt: createdAt
-        )
-    }
-}
-```
-
-## Repository pattern
-
-```swift
-final class LiveOrderRepository: OrderRepository {
-    private let client: APIClient
-
-    init(client: APIClient) { self.client = client }
-
-    func get(id: OrderID) async throws -> Order {
-        do {
-            let dto: OrderDTO = try await client.get("/orders/\(id.raw)")
-            return dto.toDomain()
-        } catch let error as APIError {
-            throw map(error)
-        } catch is DecodingError {
-            throw DomainError.invalidResponse
-        }
-    }
-
-    private func map(_ error: APIError) -> DomainError {
-        switch error {
-        case .invalidResponse: return .invalidResponse
-        case .status(let code, _):
-            switch code {
-            case 401: return .unauthorized
-            case 404: return .notFound
-            case 500...599: return .server
-            default: return .unknown("HTTP \(code)")
-            }
-        }
-    }
-}
-```
-
 ## Authentication
 
-An `AuthTokenProvider` protocol, backed by Keychain storage:
+Token access goes through a protocol, backed by the Keychain (see `keychain-secure-storage`):
 
 ```swift
 protocol AuthTokenProvider: Sendable {
@@ -177,30 +84,21 @@ protocol AuthTokenProvider: Sendable {
 }
 ```
 
-Refresh logic lives in the token provider, not the APIClient. The APIClient asks for a token before every call.
+**Refresh logic lives in the token provider, not the client.** The client asks for a token before each request and knows nothing about expiry, retry, or the refresh endpoint. That keeps the "401 → refresh → retry once" policy in one testable place instead of smeared across call sites.
+
+## Testing seam
+
+Inject the `URLSession`. Production passes `.shared`; tests pass a session configured with a custom `URLProtocol` subclass — the pattern is in `ios-testing`. **`URLSession.shared` is not untestable; hard-coding it is.**
 
 ## Logging
 
-- Only in DEBUG builds. Never log request / response bodies in release.
-- Redact `Authorization` headers and any body field that might contain PII.
-- Use `Logger` from `os`, not `print`.
-
-```swift
-#if DEBUG
-logger.debug("GET \(request.url?.absoluteString ?? "?", privacy: .public) → \(http.statusCode, privacy: .public)")
-#endif
-```
-
-## Streaming / pagination
-
-- Cursor-based APIs → `AsyncStream<[Element]>` from the repository. View model collects it.
-- Simple offset pagination → the repository takes `page:` / `cursor:` and the view model composes.
+- DEBUG builds only, and never request or response bodies.
+- `Authorization` headers are redacted, always. So is any body field that could carry PII.
+- `Logger` from `os` with explicit privacy modifiers — see `swift-style`.
 
 ## Common pitfalls
 
-- **Using `Data(contentsOf:)` for HTTP.** Never — it's synchronous and swallows errors.
-- **Forgetting to map errors.** `URLError` leaking into a view is a bug.
-- **Creating a new `JSONDecoder` per call.** It's cheap, but reuse is cheaper.
-- **Not setting `Content-Type` on POST / PUT.** Many APIs reject otherwise.
-- **Logging `Authorization` headers.** Redact.
-- **Treating `URLSession.shared` as untestable.** Inject a `URLSession` — production uses `.shared`, tests use a `URLSession` with a custom `URLProtocol` subclass.
+- **`Data(contentsOf:)` for HTTP** — synchronous, swallows errors, blocks whatever thread it's on. Never.
+- **Missing `Content-Type` on POST/PUT** — many APIs reject the request with an unhelpful error.
+- **A new `JSONDecoder` per call** — cheap, but the shared configured one is both cheaper and consistent.
+- **Force-unwrapping `URLComponents.url`** — a path with an unescaped character makes it `nil` and crashes in production. `guard` and return a `DomainError`.

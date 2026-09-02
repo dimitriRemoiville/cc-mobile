@@ -1,94 +1,56 @@
 ---
 name: android-performance
-description: Android performance patterns — Baseline Profiles, Macrobenchmark, Compose recomposition counting, StrictMode, Perfetto traces, startup + scroll measurement. Load when investigating jank, cold-start regressions, or shipping a release build.
+description: Project-specific Android performance conventions on top of Baseline Profiles, Macrobenchmark, Compose compiler metrics, StrictMode, and Perfetto. Covers the measure-first mandate, the Compose-metrics Gradle wiring, the debug-only StrictMode block, and project-specific hard-nos. Load when investigating jank, cold-start regressions, or shipping a release build.
 ---
 
-# Android performance
+# Android performance (project delta)
 
-## Measure first, optimize after
+For Baseline Profile, Macrobenchmark, Perfetto, and Compose stability fundamentals — read [`developer.android.com/topic/performance`](https://developer.android.com/topic/performance) and Google's Perfetto deep-dive skills: [`profilers/perfetto-trace-analysis`](https://github.com/android/skills/tree/main/profilers/perfetto-trace-analysis) (investigate jank/memory/latency from a captured trace) and [`profilers/perfetto-sql`](https://github.com/android/skills/tree/main/profilers/perfetto-sql) (translate intents into trace_processor SQL). For R8 / Proguard rule audits, see [`performance/r8-analyzer`](https://github.com/android/skills/tree/main/performance/r8-analyzer).
 
-Performance claims without a `Macrobenchmark` run or Perfetto trace are opinions. Every optimization in this repo has a before/after number attached.
+This file documents only this project's conventions on top of those.
+
+## When this applies
+
+Stack-agnostic. The Compose-specific subsections apply only when Compose is in use; for View-based apps, apply the same measurement discipline with View-system tools (Systrace + `Choreographer` frame callbacks).
+
+## Measure first, optimize after (project rule)
+
+**Performance claims without a `Macrobenchmark` run or Perfetto trace are opinions.** Every optimization in this repo ships with a before/after number attached. The reviewer rejects PRs that claim a perf win with no measurement.
 
 ## Baseline Profiles
 
-Mandatory for release. A Baseline Profile primes AOT compilation for the user journeys captured during a benchmark run; cold-start improvements in the 20-40% range are typical.
+Mandatory for release builds. The `BaselineProfileRule` test drives the critical flows (launch, first screen, top two navigation targets); `./gradlew :app:generateReleaseBaselineProfile` writes the profile under `app/src/release/generated/baselineProfiles/`.
 
-1. Add the `baselineprofile` module with Google's Gradle plugin.
-2. Write a `BaselineProfileRule` test that drives your critical flows (launch, first screen, navigation to top 2 features).
-3. Run `./gradlew :app:generateReleaseBaselineProfile` — profile lands under `app/src/release/generated/baselineProfiles/`.
-4. CI regenerates on demand, not every PR. Manual bump + code review.
-
-Don't hand-edit the generated profile.
+Project rules:
+- CI regenerates **on demand**, not every PR. Manual bump + code review.
+- Don't hand-edit the generated profile.
+- Regeneration policy + the Gradle command sequence live in `android-release` — load that skill at release time.
 
 ## Macrobenchmark
 
-```kotlin
-@RunWith(AndroidJUnit4::class)
-class StartupBenchmark {
-    @get:Rule val rule = MacrobenchmarkRule()
-
-    @Test fun startup() = rule.measureRepeated(
-        packageName = "com.example.app",
-        metrics = listOf(StartupTimingMetric()),
-        iterations = 10,
-        startupMode = StartupMode.COLD,
-    ) {
-        pressHome()
-        startActivityAndWait()
-    }
-
-    @Test fun scrollFeed() = rule.measureRepeated(
-        packageName = "com.example.app",
-        metrics = listOf(FrameTimingMetric()),
-        iterations = 5,
-        startupMode = StartupMode.WARM,
-    ) {
-        startActivityAndWait()
-        device.findObject(By.res("feed")).fling(Direction.DOWN)
-    }
-}
-```
-
-- Always run against a **release** build — debug builds include JIT warmup and `compose-runtime` debug helpers.
-- Report `timeToInitialDisplayMs` and `timeToFullDisplayMs` (call `reportFullyDrawn()` from the feature after first meaningful render).
+- Always run against a **release** build — debug includes JIT warmup and `compose-runtime` debug helpers; results are meaningless.
+- Use `StartupTimingMetric` for cold/warm start; `FrameTimingMetric` for scroll/animation.
+- **Call `reportFullyDrawn()`** from the feature once the first meaningful render is on screen. Without it, `timeToFullDisplayMs` is whatever Android guesses (usually wrong).
+- Iterations: ≥ 10 for cold start, ≥ 5 for warm/scroll. Lower counts produce noisy medians.
 
 ## Compose recomposition
 
-### Counting recompositions in debug
-
-```kotlin
-@Composable
-fun OrderRow(order: Order) {
-    SideEffect { Log.d("Recomp", "OrderRow ${order.id}") } // debug only
-}
-```
-
-Better: Layout Inspector's recomposition count column (Android Studio Hedgehog+).
-
-### Rules of thumb
-
-- **Stable types**: primitives, `@Immutable`/`@Stable`-annotated data classes, `persistentListOf`/`ImmutableList` from Kotlinx collections-immutable.
-- Unstable lambdas: `onClick = { viewModel.onClick(id) }` captures `id` + `viewModel`; if `id` is a stable key, lift the lambda with `remember(id) { { viewModel.onClick(id) } }`.
-- `derivedStateOf` for reads derived from `State` that change less often than the source.
-- `key(id)` around loop bodies in `LazyColumn` items — not decorative, controls item identity across updates.
-
-### Compose compiler metrics
+For stability rules (stable types, unstable lambdas, `derivedStateOf`, `key()` in `LazyColumn`), use Layout Inspector's recomposition count column (Android Studio Hedgehog+) and the official [Compose performance guide](https://developer.android.com/develop/ui/compose/performance). The project rule on top of that is the **Compose compiler metrics report**, wired in `app/build.gradle.kts`:
 
 ```kotlin
 kotlin {
     compilerOptions {
         freeCompilerArgs.addAll(
-            "-P", "plugin:androidx.compose.compiler.plugins.kotlin:reportsDestination=${project.layout.buildDirectory.dir("compose_reports").get().asFile}",
+            "-P", "plugin:androidx.compose.compiler.plugins.kotlin:reportsDestination=" +
+                "${project.layout.buildDirectory.dir("compose_reports").get().asFile}",
         )
     }
 }
 ```
 
-Look at `module.json` for `restartable` / `skippable` percentages. Unstable classes show up in `classes.txt`.
+After a build, `module.json` shows per-`@Composable` `restartable` / `skippable` percentages; `classes.txt` lists unstable classes. PRs that drop the skippable percentage below the previous baseline get flagged.
 
-## StrictMode
-
-Enable in Application `onCreate` on debug only:
+## StrictMode (debug-only Application block)
 
 ```kotlin
 if (BuildConfig.DEBUG) {
@@ -101,46 +63,16 @@ if (BuildConfig.DEBUG) {
 }
 ```
 
-Crashes you catch in dev save you a 1-star review in prod.
+Lives in `{{APP_CLASS}}.onCreate()`. Never enable in release — the policy callbacks themselves cost frames. The point is to crash loudly in dev so violations don't make it to prod.
 
-## Perfetto / system traces
+## Custom trace sections
 
-Custom trace sections for expensive work:
-
-```kotlin
-import androidx.tracing.trace
-
-trace("OrderListLoad") {
-    val orders = repository.load()
-    // ...
-}
-```
-
-Record a trace via `adb shell perfetto ...` or Android Studio's profiler, then annotate the captured `trace-...-pftrace` with your sections to find long tasks.
-
-## Startup
-
-- **App Startup** library for eager one-shot initializers (WorkManager, analytics). Don't fork startup into a dozen scattered `ContentProvider`s.
-- Hilt's `@InstallIn(SingletonComponent::class)` modules are lazy — safe.
-- Ban any synchronous IO from `Application.onCreate`, including Firebase init (use `FirebaseApp.initializeApp(this)` in a background executor if you need custom config).
-
-## Lists
-
-- `LazyColumn` / `LazyRow` over `Column { items.forEach { } }` for >10 items.
-- `items(list, key = { it.id })` — without the key, any mutation re-creates every item.
-- `contentType = { it::class }` groups compatible items for fewer composition slot resets.
-- Paging 3 for >500 items or paginated API.
-
-## Images
-
-- `coil-compose` with `SubcomposeAsyncImage` for placeholders.
-- Explicit `size(Dimension.Pixels(w), Dimension.Pixels(h))` on the ImageRequest when the display size is known — avoids re-decoding.
-- Disk cache is on by default; don't disable.
+Wrap expensive work in `androidx.tracing.trace("Name") { }` to surface it in Perfetto. Use sparingly; `trace { }` itself has a small but non-zero cost per call. Don't wrap hot loops — wrap **boundary calls** (`OrderListLoad`, `FeedSync`, `ImageDecode`).
 
 ## Hard nos
 
-- No optimizing without a measurement.
-- No `remember { mutableStateOf(...) }` for values that should come from the ViewModel.
-- No work on the main thread in `onCreate` that reads disk or network.
-- No `CompositionLocal` abuse for scalar state that changes frequently — every read site recomposes.
-- No benchmarking on a debug build and claiming a result.
+- **No optimizing without a measurement.** Reviewer rejects "this should be faster" with no number.
+- **No `remember { mutableStateOf(...) }` for values that should come from the ViewModel** — that's a state-hoisting violation that also pessimizes recomposition.
+- **No synchronous I/O in `Application.onCreate()`** — disk reads, network calls, Firebase config fetch. Defer to a background executor or App Startup initializer.
+- **No benchmarking on a debug build** and claiming a result.
+- **No `CompositionLocal` for scalar state that changes frequently** — every reader recomposes on every change.

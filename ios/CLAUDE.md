@@ -70,8 +70,9 @@ Dependency direction is always **Presentation → Domain ← Data**. The Domain 
 - Prefer structured concurrency (`async let`, `TaskGroup`) over detached tasks.
 
 **Errors**
-- Domain layer returns `Result<T, DomainError>` or `throws` a `DomainError` — never `throws` a platform error (`URLError`, `NSError`) across layers.
+- Domain-facing signatures return `Outcome<T>` (the sealed result type in `AppCore`, alongside the `DomainError` taxonomy). On a codebase that predates it, `throws` a `DomainError` is the equivalent — either way a platform error (`URLError`, `DecodingError`, `NSError`, `OSStatus`) never crosses a layer boundary.
 - Network/IO errors are mapped at the repository boundary.
+- `CancellationError` is not a domain failure — let it propagate, or `catch is CancellationError { return }` before the general `catch`. Folding it into an error state paints a banner over a screen the user already left.
 
 ## Build
 

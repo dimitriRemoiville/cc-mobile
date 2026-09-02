@@ -9,7 +9,7 @@ Add a Bloc or Cubit under an existing feature. `$ARGUMENTS` is `<feature>/<Name>
 
 ## Before writing any code
 
-Read `.claude/skills/bloc-state/SKILL.md`. Decide Bloc vs Cubit. Cubit if methods map 1:1 to state transitions; Bloc if event-driven flows with concurrency concerns.
+Read `${CLAUDE_PLUGIN_ROOT}/skills/bloc-state/SKILL.md`. Decide Bloc vs Cubit. Cubit if methods map 1:1 to state transitions; Bloc if event-driven flows with concurrency concerns.
 
 ## Files to create
 

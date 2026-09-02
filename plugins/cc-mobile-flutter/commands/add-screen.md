@@ -9,7 +9,7 @@ Add a new screen. `$ARGUMENTS` is `<feature>/<ScreenName>` (e.g. `order/OrderDet
 
 ## Before writing any code
 
-Read `.claude/skills/widgets-and-screens/SKILL.md`. Check the feature's existing screens to match local conventions.
+Read `${CLAUDE_PLUGIN_ROOT}/skills/widgets-and-screens/SKILL.md`. Check the feature's existing screens to match local conventions.
 
 ## Files to create
 

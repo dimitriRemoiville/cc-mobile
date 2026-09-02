@@ -21,7 +21,7 @@ Exactly one of:
 
 ## Procedure
 
-1. **Load context.** Read `.claude/skills/kmm-testing/SKILL.md`.
+1. **Load context.** Read `${CLAUDE_PLUGIN_ROOT}/skills/kmm-testing/SKILL.md`.
 
 2. **Discover targets.**
    - `--feature`: glob `shared/src/commonMain/kotlin/**/<feature>/**/*.kt`. Filter to testable types (see classification below).

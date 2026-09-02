@@ -1,21 +1,28 @@
 ---
 name: compose-ui
-description: Authoritative playbook for building Jetpack Compose screens and components in this project. Use whenever writing or editing any `@Composable`, theming, previews, or state collection. Covers Material 3, state hoisting, recomposition discipline, accessibility, and testing hooks. Navigation destinations and route plumbing live in `navigation-compose` — load that one for any nav-graph or typed-route work.
+description: Project-specific Compose conventions — the Route/Screen split, `UiState` / `UiEvent` shape, Figma-MCP-to-`MaterialTheme` translation, and the hard-nos this project enforces. Load whenever writing or editing any `@Composable` in this codebase. Navigation destinations and route plumbing live in `navigation-compose` — load that one for any nav-graph or typed-route work.
 ---
 
-# Compose UI skill
+# Compose UI (project delta)
 
-This skill governs every Compose change in the project.
+For Compose fundamentals — state hoisting, `Modifier` ordering, `LazyColumn` keys, `@Preview`, recomposition hygiene, `derivedStateOf`, stability — read the [official Compose state guide](https://developer.android.com/develop/ui/compose/state) and Google's published [`android/skills/jetpack-compose/*`](https://github.com/android/skills/tree/main/jetpack-compose) skills (adaptive layouts, theming, View-to-Compose migration). This file documents only where this project's conventions add to or override those defaults.
+
+## When this applies
+
+Jetpack Compose only. On an existing app:
+
+- **View-based UI** (`res/layout/*.xml`, `findViewById`, `binding.`, `Fragment` setup) → don't push Compose patterns. The Route/Screen split, `collectAsStateWithLifecycle`, `Modifier`-first conventions are Compose-only.
+- **Mixed Compose + View** (`ComposeView` inside an XML layout, or Compose host fragments) → apply this skill to the `@Composable` parts only; let the View parts follow their own conventions.
 
 ## Pulling design specs from Figma
 
 The plugin declares Figma's official MCP server (`.mcp.json` → `figma`, `https://mcp.figma.com/mcp`, OAuth — no API key in the plugin). If the user supplies a Figma URL when asking for a screen or component, pull layout / typography / color / spacing details from the file before generating Compose code. First call triggers a browser OAuth prompt; nothing to configure beyond that.
 
-Map Figma tokens onto `MaterialTheme.colorScheme` / `typography` / `shapes` (see "Theming" below). Don't paste raw hex/px values into composables — translate to the theme.
+Map Figma tokens onto `MaterialTheme.colorScheme` / `typography` / `shapes`. Don't paste raw hex/px values into composables — translate to the theme.
 
-## The shape of a screen
+## Route + Screen split (project rule)
 
-A screen is split into two functions: a stateful **Route** that owns the ViewModel, and a stateless **Screen** that renders state and surfaces callbacks.
+Every screen is **two functions**: a stateful **Route** that owns the ViewModel, and a stateless **Screen** that renders state and surfaces callbacks. The Route is the only place `hiltViewModel()` is called; everything below the Screen receives state + lambdas as parameters.
 
 ```kotlin
 @Composable
@@ -25,20 +32,12 @@ fun OrderRoute(
     viewModel: OrderViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-
     LaunchedEffect(Unit) {
         viewModel.events.collect { event ->
-            when (event) {
-                is OrderEvent.Checkout -> onCheckout(event.id)
-            }
+            when (event) { is OrderEvent.Checkout -> onCheckout(event.id) }
         }
     }
-
-    OrderScreen(
-        state = state,
-        onBack = onBack,
-        onAction = viewModel::onAction,
-    )
+    OrderScreen(state = state, onBack = onBack, onAction = viewModel::onAction)
 }
 
 @Composable
@@ -47,27 +46,14 @@ fun OrderScreen(
     onBack: () -> Unit,
     onAction: (OrderAction) -> Unit,
     modifier: Modifier = Modifier,
-) {
-    Scaffold(
-        modifier = modifier,
-        topBar = { OrderTopBar(onBack = onBack) },
-    ) { padding ->
-        when (state) {
-            OrderUiState.Loading -> LoadingContent(Modifier.padding(padding))
-            is OrderUiState.Error -> ErrorContent(state.message, Modifier.padding(padding))
-            is OrderUiState.Success -> OrderContent(
-                order = state.order,
-                onAction = onAction,
-                modifier = Modifier.padding(padding),
-            )
-        }
-    }
-}
+) { /* pure UI — no Hilt, no ViewModel reference */ }
 ```
 
-## UiState
+The Screen is what `@Preview` and Compose UI tests drive — no Hilt setup required. The Route's job is wiring; the Screen's job is rendering.
 
-Always a sealed interface (or sealed class) with explicit branches:
+## UiState and UiEvent shape
+
+State is always a **sealed type** with explicit `Loading` / `Error` / `Success` branches by default:
 
 ```kotlin
 sealed interface OrderUiState {
@@ -77,7 +63,7 @@ sealed interface OrderUiState {
 }
 ```
 
-One-off effects (navigation, snackbars, toasts) are NOT state — they are events:
+One-off effects (navigation, snackbars, toasts) are **not** state — they're events emitted through a `Channel<UiEvent>` and collected once in the Route:
 
 ```kotlin
 sealed interface OrderEvent {
@@ -86,71 +72,28 @@ sealed interface OrderEvent {
 }
 ```
 
-## Modifier rules
-
-- First optional parameter, always defaulted: `modifier: Modifier = Modifier`.
-- Pass-through to the root layout: `Column(modifier = modifier) { ... }`.
-- Composables internally use **new** `Modifier` instances; don't propagate the caller's `modifier` to children unless that's the intent.
-- Avoid `Modifier.fillMaxSize()` inside a reusable component — let the caller decide.
-
-## State hoisting
-
-Stateful primitives stay with the ViewModel. Within a Composable, `remember` is acceptable for pure UI state (sheet open/closed, text field value if the ViewModel doesn't care). If the ViewModel ever needs to read or restore it, it belongs in UiState.
-
-## Lists
-
-```kotlin
-LazyColumn {
-    items(items = products, key = { it.id }) { product ->
-        ProductRow(product = product, onClick = { onAction(Click(product.id)) })
-    }
-}
-```
-
-- **Always** provide `key =` for stable identity.
-- Hoist the click lambda or use `remember(product.id) { { onAction(Click(product.id)) } }` if you're profiling recompositions.
-
-## Previews
-
-Every non-trivial composable has at least one preview. Previews are **always** wrapped in the app theme:
-
-```kotlin
-@Preview(name = "Light")
-@Preview(name = "Dark", uiMode = UI_MODE_NIGHT_YES)
-@Composable
-private fun OrderScreenPreview() = AppTheme {
-    OrderScreen(
-        state = OrderUiState.Success(fakeOrder()),
-        onBack = {},
-        onAction = {},
-    )
-}
-```
-
-For multi-state previews, use `PreviewParameterProvider`.
+`StateFlow` for state, `Channel` for events. `SharedFlow` only when you actually need replay.
 
 ## Theming
 
-- Colors: `MaterialTheme.colorScheme.primary` — never hex literals outside theme files.
-- Typography: `MaterialTheme.typography.bodyLarge`. Typography tokens are defined in `Type.kt`.
-- Shapes: `MaterialTheme.shapes.medium`.
+- Colors come from `MaterialTheme.colorScheme.*`. **No hex literals in `@Composable` code** — they live in the theme files only.
+- Typography tokens are defined in `Type.kt` and consumed as `MaterialTheme.typography.bodyLarge` etc.
+- Shapes as `MaterialTheme.shapes.medium` etc.
+
+When extracting from Figma, define the token in the theme, then reference it from composables.
 
 ## Accessibility
 
-- Every `Icon` without adjacent text gets a `contentDescription`.
-- Decorative icons: `contentDescription = null` is explicit — don't omit the param.
-- Interactive elements must be ≥ 48dp tap target. `Modifier.minimumInteractiveComponentSize()` helps.
-- Support dynamic text scaling — don't set `fontSize` with fixed `sp` numbers outside the type scale.
+The full accessibility checklist lives in the `android-accessibility` skill. The minimum the reviewer flags here:
 
-## Recomposition hygiene
-
-- Read state as late as possible. Pushing a state read into the deepest composable that needs it reduces recomposition scope.
-- Use `derivedStateOf { }` when a value is derived from multiple state reads and consumed by a hot path.
-- Mark stable data classes `@Immutable` when the compiler can't infer stability (e.g., contains a `List<Foo>`).
+- Every `Icon` without adjacent text gets a `contentDescription` (or `null`, explicit).
+- Interactive elements ≥ 48dp tap target.
 
 ## Hard nos
 
-- No `LiveData` in new code.
-- No `collectAsState()` for ViewModel state — use `collectAsStateWithLifecycle()`.
-- No network or DB calls inside a Composable or `LaunchedEffect` that reaches around the ViewModel.
-- No `@Composable` longer than ~60-80 lines. Extract children when concerns mix (layout + stateful behaviour + event handling in one function) or nesting exceeds 3 levels. Lines alone aren't the rule; readability is.
+- **No `LiveData`** in new code — use `StateFlow`.
+- **No `collectAsState()`** for ViewModel state — `collectAsStateWithLifecycle()` only.
+- **No `hiltViewModel()` outside the Route.** Never inside a child composable, never passed down as a parameter.
+- **No network or DB calls inside a `@Composable`** or any `LaunchedEffect` that reaches around the ViewModel.
+- **No hex literals in composables.** Always go through `MaterialTheme.*` (see Theming).
+- **No `@Composable` longer than ~60-80 lines.** Extract children when concerns mix (layout + stateful behaviour + event handling) or nesting exceeds 3 levels. Lines alone aren't the rule; readability is.

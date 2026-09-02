@@ -1,126 +1,60 @@
 ---
 name: android-testing
-description: Testing patterns used in this project — JUnit + MockK unit tests, `runTest` for coroutines, Turbine for Flow, Compose UI tests with `createComposeRule`, and Hilt-aware instrumentation tests. Load when writing, updating, or debugging tests of any kind.
+description: Project-specific testing conventions on top of JUnit 4 + MockK + Turbine + Compose UI tests + Hilt-aware instrumentation. Covers `Outcome<T>` mock returns, the `AnalyticsTracker`-on-init assertion every VM test makes, the fakes-vs-mocks heuristic, and the `@BindValue` Hilt-test shortcut. Load when writing, updating, or debugging tests of any kind.
 ---
 
-# Testing playbook
+# Testing (project delta)
 
-## Dependencies to have in the catalog
+For testing fundamentals — `runTest`, `Dispatchers.setMain`, basic Turbine usage, `createComposeRule`, MockK syntax — read the [coroutines testing guide](https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-test/), the [Turbine README](https://github.com/cashapp/turbine), and Google's [`testing/testing-setup` skill](https://github.com/android/skills/tree/main/testing/testing-setup). This file documents only this project's conventions.
 
-- `junit`, `kotlin-test`
-- `kotlinx-coroutines-test`
-- `mockk`
-- `turbine`
-- `androidx.compose.ui:ui-test-junit4` + `ui-test-manifest`
-- `androidx.hilt:hilt-android-testing` + `hilt-compiler` (`ksp`)
-- `androidx.arch.core:core-testing` (for `InstantTaskExecutorRule` if any LiveData sneaks in)
+## When this applies
 
-## Where tests live
+JUnit 4 + MockK + Turbine + Compose UI tests + Hilt instrumentation. On an existing app:
 
-```
-src/test/                 # JVM unit tests — fast, no emulator
-src/androidTest/          # Instrumented — emulator/device, Compose UI tests
-```
+- **JUnit 5** (`org.junit.jupiter.*`) → keep it. Don't migrate; JUnit 4 stays cleaner with `androidx.test.*` runners but JUnit 5 is fine for pure-JVM modules.
+- **Mockito** (`org.mockito.*`) → adapt syntax, don't force a MockK migration.
+- **Kotest** (`io.kotest.*`) → keep; assertion style differs but the Turbine / `runTest` patterns below still apply.
+- **Robolectric** in unit tests → flag the slow-test cost when relevant, don't refactor.
 
-## Use case tests (pure JVM)
+## Outcome in mock returns
+
+Repository / use-case mocks **always** return `Outcome.Success(...)` or `Outcome.Failure(DomainError.X(...))` — never `Result.success` / `Result.failure`. See `kotlin-style` for the rule. Common pattern:
 
 ```kotlin
-class SubmitOrderUseCaseTest {
-    private val orders: OrderRepository = mockk()
-    private val clock: Clock = FakeClock("2026-04-22T00:00:00Z")
-    private val submit = SubmitOrderUseCase(orders, clock)
-
-    @Test
-    fun `returns Success when repository accepts the order`() = runTest {
-        val draft = OrderDraft(items = listOf(item()))
-        coEvery { orders.create(draft) } returns Outcome.Success(ORDER)
-
-        val result = submit(draft)
-
-        assertThat(result).isInstanceOf(Outcome.Success::class.java)
-    }
-
-    @Test
-    fun `returns Failure when repository returns error`() = runTest {
-        coEvery { orders.create(any()) } returns Outcome.Failure(DomainError.Network())
-
-        val result = submit(OrderDraft(emptyList()))
-
-        assertThat(result).isEqualTo(Outcome.Failure(DomainError.Network()))
-    }
-}
+coEvery { orders.create(any()) } returns Outcome.Failure(DomainError.Network())
 ```
 
-Repository / use-case mocks always return `Outcome.Success(...)` or `Outcome.Failure(DomainError.X(...))` — not `Result.success` / `Result.failure`. See `kotlin-style` for why.
+## ViewModel test rules
 
-## ViewModel tests
+- `StandardTestDispatcher`, **not** `UnconfinedTestDispatcher`, unless you have a specific reason.
+- Always `Dispatchers.setMain(dispatcher)` in `@Before`, `Dispatchers.resetMain()` in `@After`.
+- Drive the scheduler with `advanceUntilIdle()` and `runTest(dispatcher)`. Don't rely on immediate execution.
+- Collect state with **Turbine** (`flow.test { awaitItem() }`). Don't poll `viewModel.state.value`.
+- Assert the **full state sequence** the test cares about — including `Loading` before `Success` — not just the final value.
 
-```kotlin
-@OptIn(ExperimentalCoroutinesApi::class)
-class OrderViewModelTest {
-    private val dispatcher = StandardTestDispatcher()
-    private val submit: SubmitOrderUseCase = mockk()
-    private lateinit var viewModel: OrderViewModel
+The scaffold's `FeedViewModelTest` in `${CLAUDE_PLUGIN_ROOT}/skills/android-app-skeleton/references/tests.md` is the canonical example.
 
-    @Before
-    fun setUp() {
-        Dispatchers.setMain(dispatcher)
-        viewModel = OrderViewModel(submit)
-    }
+## Analytics-on-init assertion (project rule)
 
-    @After fun tearDown() { Dispatchers.resetMain() }
-
-    @Test
-    fun `state transitions Loading -> Success`() = runTest(dispatcher) {
-        coEvery { submit(any()) } returns Outcome.Success(ORDER)
-
-        viewModel.state.test {
-            assertThat(awaitItem()).isEqualTo(OrderUiState.Loading)
-            viewModel.onAction(OrderAction.Submit(DRAFT))
-            assertThat(awaitItem()).isInstanceOf(OrderUiState.Success::class.java)
-        }
-    }
-}
-```
-
-Rules:
-- **Always** set + reset `Dispatchers.Main`.
-- `StandardTestDispatcher` (not `UnconfinedTestDispatcher`) unless you have a specific reason.
-- Use **Turbine** — don't poll `viewModel.state.value`.
-
-## Analytics in ViewModel tests
-
-Every `<Feature>ViewModel` in this project injects `AnalyticsTracker` and fires the screen-viewed event from `init { }`. Mock the tracker and assert it fired exactly once during VM construction.
+Every `<Feature>ViewModel` in this project injects `AnalyticsTracker` and fires the screen-viewed event from `init { }`. Every VM test asserts the event fires exactly once on construction:
 
 ```kotlin
 private val analytics: AnalyticsTracker = mockk(relaxed = true)
 
 @Test
-fun `fires FeedViewed when constructed`() = runTest(dispatcher) {
+fun `fires FeedViewed when constructed`() {
     FeedViewModel(getFeed, analytics)
-
     verify(exactly = 1) { analytics.track(AnalyticsEvent.FeedViewed) }
 }
 ```
 
-Use `relaxed = true` so unrelated tracker calls in the rest of the test don't need `every { ... } returns Unit` plumbing. If a test asserts a *specific* downstream event (e.g. "tapping retry fires FeedRetried"), use `verify(exactly = 1) { analytics.track(AnalyticsEvent.FeedRetried) }` and keep the relaxed mock — no spy needed.
+Use `relaxed = true` so unrelated tracker calls don't need `every { ... } returns Unit` plumbing. For specific downstream events (e.g. "tapping retry fires `FeedRetried`"), keep the relaxed mock and add a `verify(exactly = 1) { analytics.track(AnalyticsEvent.FeedRetried) }`.
 
-## Flow tests with Turbine
+If you add a VM test that doesn't assert the `init { }` event, the reviewer flags it as missing coverage of the canonical pattern.
 
-```kotlin
-flow.test {
-    assertThat(awaitItem()).isEqualTo(first)
-    assertThat(awaitItem()).isEqualTo(second)
-    awaitComplete()
-}
-```
+## Fakes vs mocks (project heuristic)
 
-- `cancelAndIgnoreRemainingEvents()` when you don't care what happens after the assertion you care about.
-- `expectNoEvents()` when asserting something did **not** emit.
-
-## Fakes vs mocks
-
-Default to **fakes** for classes with >2 methods or non-trivial behavior. Fakes are cheaper to maintain than 20 `coEvery` lines.
+**Default to fakes for classes with >2 methods or non-trivial behavior.** Fakes are cheaper to maintain than 20 `coEvery` lines.
 
 ```kotlin
 class FakeOrderRepository : OrderRepository {
@@ -134,33 +68,19 @@ class FakeOrderRepository : OrderRepository {
 Mock only:
 - Generated services (Retrofit interfaces, Room DAOs).
 - Single-method lambdas / callbacks.
-- Collaborators being used for exactly one call in one test.
+- Collaborators used for exactly one call in one test.
 
-## Compose UI tests
+## Compose UI test conventions
 
-```kotlin
-class OrderScreenTest {
-    @get:Rule val composeRule = createComposeRule()
+- Drive the **stateless `<Feature>Screen`**, not the `<Feature>Route` — see the Route/Screen split in `compose-ui`. No Hilt setup needed.
+- Wrap `setContent { }` in `AppTheme` so theming-dependent assertions work.
+- Prefer **semantic matchers** (`onNodeWithText`, `onNodeWithContentDescription`) over `testTag`. Add a `testTag` only when there's no natural semantic.
 
-    @Test fun `shows order id in Success state`() {
-        composeRule.setContent {
-            AppTheme {
-                OrderScreen(
-                    state = OrderUiState.Success(fakeOrder(id = "ABC")),
-                    onBack = {},
-                    onAction = {},
-                )
-            }
-        }
+Canonical example: `FeedScreenTest` / `ProfileScreenTest` in `${CLAUDE_PLUGIN_ROOT}/skills/android-app-skeleton/references/tests.md`.
 
-        composeRule.onNodeWithText("Order ABC").assertIsDisplayed()
-    }
-}
-```
+## Hilt instrumentation tests — `@BindValue` shortcut
 
-Prefer **semantic matchers** (`onNodeWithText`, `onNodeWithContentDescription`) over `testTag`. Only add a `testTag` when there's no natural semantic.
-
-## Hilt instrumentation tests
+For Hilt-aware tests that need to swap one binding, **don't write a whole test module** — use `@BindValue`:
 
 ```kotlin
 @HiltAndroidTest
@@ -169,26 +89,20 @@ class OrderFlowTest {
     @get:Rule(order = 1) val composeRule = createAndroidComposeRule<MainActivity>()
 
     @BindValue @JvmField
-    val repo: OrderRepository = FakeOrderRepository().apply { orders = mapOf(OrderId("x") to ORDER_X) }
+    val repo: OrderRepository = FakeOrderRepository().apply {
+        orders = mapOf(OrderId("x") to ORDER_X)
+    }
 
     @Before fun setUp() { hiltRule.inject() }
-
-    @Test fun `user can see seeded order`() { ... }
 }
 ```
 
-`@BindValue` replaces the real binding for this one test.
-
-## Run tests
-
-```bash
-./gradlew :app:testDebugUnitTest --tests 'com.example.OrderViewModelTest'
-./gradlew :app:connectedDebugAndroidTest --tests 'com.example.OrderFlowTest'
-```
+`@BindValue` is the single biggest test-ergonomics win Hilt provides — uses constructor injection on the test class to swap the production binding per-test. See `hilt-di` for the test runner / `HiltTestApplication` setup.
 
 ## Don'ts
 
 - No `Thread.sleep` or bare `delay` outside `runTest`.
-- No real network in unit tests. No real Room (use `Room.inMemoryDatabaseBuilder` only if you must).
-- No test depending on the order of other tests. Each test sets up its own world.
-- No assertion without a message when the diff isn't obvious.
+- No real network in unit tests. Real Room only via `Room.inMemoryDatabaseBuilder` and only when you must.
+- No test depending on the order of other tests — each test sets up its own world.
+- No `verify` without `exactly = N` when you care about call count (default verify is "at least once").
+- No `LiveData` test rules in new code — `InstantTaskExecutorRule` is a smell that LiveData snuck in.

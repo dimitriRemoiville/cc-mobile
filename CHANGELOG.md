@@ -2,6 +2,28 @@
 
 All notable changes to this repo's Claude Code configurations are logged here. Dates are UTC. See `git log` for per-change rationale.
 
+## [Unreleased]
+
+Backport of the changes the `android` plugin needed to land in the `gen-e2-marketplace` monorepo ([PR #6](https://github.com/GLOBAL-PALO-IT/gen-e2-marketplace/pull/6)), applied to `ios/` and synced back into `android/`.
+
+### Added
+
+- **Project-fit guards on every knowledge skill (`ios`, `android`).** Each skill now leads with a `## When this applies` section naming the stack signal it assumes and how to defer when the codebase already chose otherwise — TCA / MVI / VIPER instead of MVVM, UIKit instead of SwiftUI, `swift-dependencies` / Factory instead of a composition root, Alamofire / Apollo instead of URLSession, Core Data / Realm instead of SwiftData, XCTest instead of Swift Testing, Combine instead of async/await. Without these, the skills flagged correct-for-that-project code as violations.
+- **Stack detection in `ios-reviewer` and `android-reviewer`.** A parallel grep pass (step 3) that runs *before* any rule is applied. On a mismatch the reviewer surfaces it in the summary ("This project is TCA, not MVVM — findings adapted accordingly") and applies the spirit of each rule to the actual stack. Situational skills now load only when the diff warrants **and** the stack matches.
+- **Build-time config-root rewriting in `build-plugin.sh`.** Source files keep `.claude/skills/…` paths so a stack folder still works when dropped into a project root (README option C); `rewrite_plugin_root` rewrites them to `${CLAUDE_PLUGIN_ROOT}/skills/…` when packaging, so plugin installs resolve too. Anchored on the opening backtick, so prose about copying `.claude/` is untouched. Fixes all four stacks from one source.
+
+### Changed
+
+- **iOS knowledge skills leaned to the project delta.** Generic Swift / SwiftUI / URLSession / SwiftData / Keychain / Swift Testing tutorial content removed and deferred to Apple's documentation; what remains is this project's decisions and the traps they exist to prevent. 2226 → 1532 lines across 15 skills, with the cut budget spent on sharper rules (the `CancellationError`-as-domain-failure trap, `#Predicate` capture hoisting, `.biometryCurrentSet` vs `.userPresence`, the `MockURLProtocol` static-handler race, SPKI pin rotation).
+- **`android/` synced with what actually shipped in the marketplace.** The same guard + lean pass, plus the `StandardTestDispatcher` scaffolded tests, the `app-module.md` table of contents, the `format.sh` header fix, and the Tink-over-`EncryptedSharedPreferences` reconciliation.
+- **`Skill` dropped from `ios-reviewer` / `android-reviewer` tool lists.** Both preload their base skills via the `skills:` frontmatter block, so the entry bought nothing — and `Skill` isn't guaranteed to be a recognised tool name in the Copilot CLI runtime this repo also targets. Partially reverses the 0.3.0 note below; `kmm-reviewer` and `flutter-reviewer` still grant it and should follow.
+- **`ios/CLAUDE.md` error contract now says `Outcome<T>`**, matching `ios-app-skeleton` and `swift-style`. It previously said `Result<T, DomainError>`, which no scaffolded file used.
+
+### Fixed
+
+- **Stale skeleton pointers in the iOS commands.** `/init-ios-app` and `/upgrade-deps` referenced a "Compatibility traps" section that never existed in `ios-app-skeleton`; they now point at the spine's `## Target floor` (promoted from a bold lead-in so the anchor resolves) and at `references/app-features.md` for the iOS 17 deltas. `/init-ios-app` Phase 1 also now explains the `references/` progressive-disclosure model instead of implying the spine holds every template.
+- **`ios-security-reviewer` WebKit guidance.** `WKPreferences.javaScriptEnabled` has been deprecated since iOS 14; the check now targets `WKWebpagePreferences.allowsContentJavaScript` and adds unvalidated `WKScriptMessage` bodies as a script-injection sink.
+
 ## [0.3.0] — 2026-05-15
 
 ### Added

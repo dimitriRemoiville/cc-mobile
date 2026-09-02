@@ -1,13 +1,15 @@
 ---
 name: ios-app-skeleton
-description: Authoritative blueprint for scaffolding a brand-new iOS app with this project's conventions. Used by /init-ios-app. Contains the placeholder list, feature-flag block, layout, execution order, hard rules, and post-scaffold checklist; file templates live in `references/` and are loaded step-by-step.
+description: Load when scaffolding a brand-new iOS app from scratch (Swift 6 + SwiftUI + SPM + Clean Architecture). Authoritative blueprint used by /init-ios-app — placeholder list, feature-flag block, target layout, execution order, hard rules, and post-scaffold checklist. File templates live in `references/` and are loaded step-by-step (progressive disclosure).
 ---
 
 # iOS app skeleton
 
 This file is the **procedure**. The actual file templates live in sibling files under `references/` — each execution-order step points at the reference it needs. Read the spine end-to-end first, then load each referenced file when its step runs. Substitute placeholders before writing; do not improvise.
 
-**Target floor: Swift 6 / Xcode 16 / iOS 18.** Older toolchains are not silently accommodated — `/init-ios-app` Phase 1.5 stops on a mismatch rather than lowering the floor. iOS 17 is reachable only through the compatibility deltas called out in `references/app-features.md`; anything below that is a different skeleton.
+## Target floor
+
+**Swift 6 / Xcode 16 / iOS 18.** Older toolchains are not silently accommodated — `/init-ios-app` Phase 1.5 stops on a mismatch rather than lowering the floor. iOS 17 is reachable only through the compatibility deltas called out in `references/app-features.md`; anything below that is a different skeleton.
 
 ## Placeholders
 
